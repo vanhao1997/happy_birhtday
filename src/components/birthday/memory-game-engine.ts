@@ -28,6 +28,9 @@ export const MEMORY_WORLD = {
   speed: 230,
 } as const;
 
+// Render the world slightly zoomed out so the player can orient around nearby landmarks.
+export const MEMORY_CAMERA_ZOOM = 0.76;
+
 /** Keeps keyboard and touch movement deterministic when several directions are held. */
 export function latestHeldDirection(
   heldDirections: ReadonlySet<GameDirection>,
@@ -161,12 +164,16 @@ export function nearestZoneIndex(
 export function calculateCamera(
   player: GamePoint,
   viewport: GameViewport,
+  zoom = 1,
 ): GamePoint {
-  const maxX = Math.max(0, MEMORY_WORLD.width - viewport.width);
-  const maxY = Math.max(0, MEMORY_WORLD.height - viewport.height);
+  const safeZoom = Math.max(0.5, zoom);
+  const visibleWorldWidth = viewport.width / safeZoom;
+  const visibleWorldHeight = viewport.height / safeZoom;
+  const maxX = Math.max(0, MEMORY_WORLD.width - visibleWorldWidth);
+  const maxY = Math.max(0, MEMORY_WORLD.height - visibleWorldHeight);
   return {
-    x: clamp(player.x - (viewport.width / 2), 0, maxX),
-    y: clamp(player.y - (viewport.height / 2), 0, maxY),
+    x: clamp(player.x - (visibleWorldWidth / 2), 0, maxX),
+    y: clamp(player.y - (visibleWorldHeight / 2), 0, maxY),
   };
 }
 

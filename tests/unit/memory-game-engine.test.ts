@@ -35,6 +35,12 @@ describe("memory game engine", () => {
       .toEqual({ x: 1400, y: 840 });
   });
 
+  it("shows a wider slice of the world when the camera zooms out", () => {
+    const camera = calculateCamera({ x: 900, y: 570 }, { width: 400, height: 300 }, 0.76);
+    expect(camera.x).toBeCloseTo(636.8421, 3);
+    expect(camera.y).toBeCloseTo(372.6316, 3);
+  });
+
   it("blocks landmark collision without moving the avatar through it", () => {
     const home = MEMORY_COLLISION_RECTS.find((rect) => rect.label === "home")!;
     const start = { x: home.x + home.width + MEMORY_WORLD.playerRadius + 1, y: home.y + 40 };

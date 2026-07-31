@@ -36,6 +36,7 @@ import {
   calculateCamera,
   isGamePoint,
   latestHeldDirection,
+  MEMORY_CAMERA_ZOOM,
   MEMORY_WORLD,
   movePlayer,
   nearestZoneIndex,
@@ -168,11 +169,14 @@ export function ChildhoodMemoryMapGame({
   const visitedCount = pixelQuest.zones.filter((_, index) => isMemoryStationVisited(index, completedChapterCount, voucherRevealed)).length;
   const nextObjectiveIndex = Math.min(completedChapterCount, pixelQuest.zones.length - 1);
   const objectiveZone = pixelQuest.zones[nextObjectiveIndex] ?? firstZone;
-  const camera = useMemo(() => calculateCamera(playerPosition, viewport), [playerPosition, viewport]);
+  const camera = useMemo(
+    () => calculateCamera(playerPosition, viewport, MEMORY_CAMERA_ZOOM),
+    [playerPosition, viewport],
+  );
   const worldStyle = {
     width: `${MEMORY_WORLD.width}px`,
     height: `${MEMORY_WORLD.height}px`,
-    transform: `translate3d(-${camera.x}px, -${camera.y}px, 0)`,
+    transform: `translate3d(-${camera.x * MEMORY_CAMERA_ZOOM}px, -${camera.y * MEMORY_CAMERA_ZOOM}px, 0) scale(${MEMORY_CAMERA_ZOOM})`,
   } as CSSProperties;
 
   useEffect(() => {
