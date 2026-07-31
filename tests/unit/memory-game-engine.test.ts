@@ -2,13 +2,20 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_PIXEL_QUEST } from "@/lib/birthday/dto";
 import {
   calculateCamera,
+  calculateCameraWithDeadZone,
+  directionToward,
+  findWaypointPath,
   isBlocked,
   latestHeldDirection,
   MEMORY_COLLISION_RECTS,
   MEMORY_WORLD,
+  moveToward,
   movePlayer,
   nearestZoneIndex,
+  phaseForState,
+  pixelQuestConfigSignature,
   playerStartPoint,
+  waypointForZone,
   zoneToWorldPoint,
 } from "@/components/birthday/memory-game-engine";
 
@@ -25,14 +32,14 @@ describe("memory game engine", () => {
   it("converts public zone percentages into the large pixel world", () => {
     const point = zoneToWorldPoint(DEFAULT_PIXEL_QUEST.zones[0]!);
     expect(point.x).toBeCloseTo(252);
-    expect(point.y).toBeCloseTo(832.2);
+    expect(point.y).toBeCloseTo(817.6);
   });
 
   it("keeps the camera inside the world at every edge", () => {
     expect(calculateCamera({ x: 10, y: 10 }, { width: 400, height: 300 }))
       .toEqual({ x: 0, y: 0 });
-    expect(calculateCamera({ x: 1790, y: 1130 }, { width: 400, height: 300 }))
-      .toEqual({ x: 1400, y: 840 });
+    expect(calculateCamera({ x: 1790, y: 1110 }, { width: 400, height: 300 }))
+      .toEqual({ x: 1400, y: 820 });
   });
 
   it("shows a wider slice of the world when the camera zooms out", () => {
@@ -54,6 +61,54 @@ describe("memory game engine", () => {
       const approach = playerStartPoint(zone);
       expect(isBlocked(approach), `station ${index + 1} approach`).toBe(false);
       expect(nearestZoneIndex(approach, DEFAULT_PIXEL_QUEST.zones)).toBe(index);
+      expect(waypointForZone(zone)).toMatchObject(approach);
     });
+  });
+
+  it("finds a collision-free route from spawn to every station waypoint", () => {
+    DEFAULT_PIXEL_QUEST.zones.forEach((zone, index) => {
+      const target = waypointForZone(zone);
+      const path = findWaypointPath(DEFAULT_PIXEL_QUEST.world.spawnPoint, target);
+      expect(path.length, `station ${index + 1} path`).toBeGreaterThan(0);
+      expect(path.every((point) => !isBlocked(point)), `station ${index + 1} route`).toBe(true);
+      expect(path.at(-1)).toMatchObject({ x: target.x, y: target.y });
+    });
+  });
+
+  it("keeps camera still inside its dead-zone and follows outside it", () => {
+    const viewport = { width: 600, height: 400 };
+    const previous = { x: 400, y: 300 };
+    expect(calculateCameraWithDeadZone({ x: 700, y: 500 }, viewport, previous, 1))
+      .toEqual(previous);
+    expect(calculateCameraWithDeadZone({ x: 1100, y: 500 }, viewport, previous, 1).x)
+      .toBeGreaterThan(previous.x);
+  });
+
+  it("moves toward waypoints without teleporting", () => {
+    expect(moveToward({ x: 0, y: 0 }, { x: 100, y: 0 }, 20)).toEqual({ x: 20, y: 0 });
+    expect(directionToward({ x: 10, y: 10 }, { x: 5, y: 50 })).toBe("down");
+  });
+
+  it("routes around solid farm landmarks", () => {
+    const start = { x: 80, y: 840 };
+    const target = { x: 320, y: 840 };
+    const path = findWaypointPath(start, target);
+    expect(path.length).toBeGreaterThan(1);
+    expect(path.every((point) => !isBlocked(point))).toBe(true);
+    expect(path.at(-1)).toEqual(target);
+  });
+
+  it("derives explicit game phases and world signatures", () => {
+    expect(phaseForState({
+      hydrated: true,
+      tutorialOpen: false,
+      pauseOpen: false,
+      dialogueOpen: true,
+      questActive: false,
+      sceneOpen: false,
+      completed: false,
+      error: false,
+    })).toBe("dialogue");
+    expect(pixelQuestConfigSignature(DEFAULT_PIXEL_QUEST)).toContain("1800");
   });
 });

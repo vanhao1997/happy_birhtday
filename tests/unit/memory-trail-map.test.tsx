@@ -1,7 +1,8 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PixelMemoryQuest } from "@/components/birthday/BirthdayExperience";
 import { DEFAULT_PIXEL_QUEST } from "@/lib/birthday/dto";
+import type { PublicPixelQuestConfigDTO } from "@/lib/birthday/types";
 
 afterEach(() => {
   cleanup();
@@ -39,6 +40,34 @@ function renderMap(
 }
 
 describe("childhood memory map", () => {
+  it("normalizes a legacy v2 world restored from local session data", () => {
+    const legacyPixelQuest = {
+      version: 2,
+      preset: "childhood-memory-atlas",
+      mapWidthPx: 1200,
+      mapHeightPx: 760,
+      noFailPath: true,
+      zones: DEFAULT_PIXEL_QUEST.zones,
+    } as unknown as PublicPixelQuestConfigDTO;
+
+    render(
+      <PixelMemoryQuest
+        images={[]}
+        pixelQuest={legacyPixelQuest}
+        recipientName="Mai"
+        childCharacter={childCharacter}
+        accent="pear"
+        sessionId="legacy-session-mai"
+        completedChapterCount={0}
+        voucherRevealed={false}
+        status="idle"
+        onOpenStation={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Memory Atlas 2000 · 5 trạm")).toBeInTheDocument();
+  });
+
   it("renders a real five-station map with no question controls", () => {
     renderMap();
 
@@ -64,18 +93,15 @@ describe("childhood memory map", () => {
     expect(document.querySelector(".choice-stack")).not.toBeInTheDocument();
   });
 
-  it("moves the royal child character by selecting an enabled station", () => {
+  it("sets a waypoint without bypassing server progression", () => {
     const { onOpenStation } = renderMap(1);
     const secondStation = screen.getByRole("button", { name: /Sân chơi mùa hè/ });
 
     fireEvent.click(secondStation);
 
     expect(secondStation).toHaveAttribute("aria-pressed", "true");
-    expect(onOpenStation).toHaveBeenCalledWith(
-      1,
-      DEFAULT_PIXEL_QUEST.zones[1],
-      1,
-    );
+    expect(onOpenStation).not.toHaveBeenCalled();
+    expect(screen.getByText(/Đang đi tới Sân chơi mùa hè/)).toBeInTheDocument();
     expect(document.querySelector(".childhood-map__character")).toHaveClass("archetype-princess");
   });
 
@@ -94,18 +120,17 @@ describe("childhood memory map", () => {
     expect(screen.getByRole("button", { name: "Di chuyển phải" })).toBeEnabled();
   });
 
-  it("opens a memory by pressing Enter near an enabled station", () => {
+  it("opens NPC dialogue and starts a no-fail quest near a station", () => {
     const { onOpenStation } = renderMap();
     const map = screen.getByRole("group", { name: /Nhấn Enter/ });
 
     fireEvent.keyDown(map, { key: "Enter" });
 
-    expect(onOpenStation).toHaveBeenCalledWith(
-      0,
-      DEFAULT_PIXEL_QUEST.zones[0],
-      0,
-    );
-    expect(screen.getByRole("dialog", { name: "Ngôi nhà tuổi thơ" })).toBeInTheDocument();
+    expect(onOpenStation).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Người giữ ký ức" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Bắt đầu nhiệm vụ" }));
+    expect(screen.getByText("NHIỆM VỤ ĐANG LÀM")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Mục tiêu nhiệm vụ/ })).toBeInTheDocument();
   });
 
   it("pauses movement and resumes without changing server progress", () => {
@@ -121,6 +146,28 @@ describe("childhood memory map", () => {
     fireEvent.click(screen.getByRole("button", { name: "Tiếp tục" }));
     fireEvent.keyDown(map, { key: "ArrowRight" });
     expect(character?.style.getPropertyValue("--character-x")).not.toBe(start);
+  });
+
+  it("keeps the intro tutorial dismissed after remounting the same journey", async () => {
+    const firstRender = renderMap();
+    const dismissButton = document.querySelector<HTMLButtonElement>(".childhood-map__tutorial button");
+
+    expect(dismissButton).not.toBeNull();
+    fireEvent.click(dismissButton!);
+
+    await waitFor(() => {
+      const persisted = JSON.parse(
+        window.localStorage.getItem("happybirthday.memoryMapWorld.v3.session-mai") ?? "{}",
+      ) as { tutorialSeen?: boolean };
+      expect(persisted.tutorialSeen).toBe(true);
+    });
+
+    firstRender.unmount();
+    renderMap();
+
+    await waitFor(() => {
+      expect(document.querySelector(".childhood-map__tutorial")).not.toBeInTheDocument();
+    });
   });
 
   it("offers in-game pause actions without clearing memory progress", () => {
@@ -162,7 +209,9 @@ describe("childhood memory map", () => {
     expect(screen.getByRole("button", { name: /Xem lại trạm 5: Cổng tuổi mới/ }))
       .toHaveAttribute("aria-pressed", "false");
     expect(screen.getByText("GIFT OPEN")).toBeInTheDocument();
-    expect(window.localStorage.getItem("happybirthday.memoryMapWorld.v1.session-mai"))
-      .not.toContain("voucher");
+    const localValues = Object.keys(window.localStorage)
+      .map((key) => window.localStorage.getItem(key))
+      .join(" ");
+    expect(localValues).not.toContain("voucher");
   });
 });

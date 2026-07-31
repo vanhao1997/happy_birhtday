@@ -40,6 +40,12 @@ const events: AnalyticsEvent[] = [
   { eventName: "session_started", sessionId: "session-2" },
   { eventName: "voucher_revealed", sessionId: "session-1" },
   { eventName: "voucher_revealed", sessionId: "session-1" },
+  { eventName: "quest_started", sessionId: "session-1", payload: { checkpointId: "childhood-home" } },
+  { eventName: "quest_started", sessionId: "session-1", payload: { checkpointId: "childhood-home" } },
+  { eventName: "checkpoint_reached", sessionId: "session-1", payload: { checkpointId: "childhood-home" } },
+  { eventName: "quest_objective_completed", sessionId: "session-1", payload: { nodeId: "childhood-home" } },
+  { eventName: "memory_revealed", sessionId: "session-1", payload: { checkpointId: "childhood-home" } },
+  { eventName: "memory_revealed", sessionId: "session-1", payload: { checkpointId: "childhood-home" } },
 ];
 
 describe("campaign analytics", () => {
@@ -61,6 +67,8 @@ describe("campaign analytics", () => {
       completionRate: 0.5,
       voucherRevealRate: 1,
       averageDurationMs: 360_000,
+      questRetryRate: 0.5,
+      revisitRate: 0.5,
     });
     expect(result.recipients.map((recipient) => recipient.status)).toEqual([
       "voucher_revealed",
@@ -77,6 +85,13 @@ describe("campaign analytics", () => {
       sessionStartedEvents: 2,
       voucherRevealEvents: 1,
       matchesSessionSource: true,
+    });
+    expect(result.nodeDropOff[0]).toEqual({
+      nodeId: "childhood-home",
+      nodeOrder: 1,
+      arrived: 1,
+      completed: 1,
+      dropOffRate: 0,
     });
     expect(result.timezone).toBe("Asia/Bangkok");
     expect(result.grain).toBe("campaign/recipient/chapter/day");

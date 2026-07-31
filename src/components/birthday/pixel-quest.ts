@@ -1,10 +1,12 @@
 import type { PublicPixelQuestConfigDTO } from "@/lib/birthday/types";
+import { pixelQuestConfigSignature } from "./memory-game-engine";
 
-export const PIXEL_QUEST_PROGRESS_VERSION = 2 as const;
+export const PIXEL_QUEST_PROGRESS_VERSION = 3 as const;
 
 export interface PixelQuestProgress {
   version: typeof PIXEL_QUEST_PROGRESS_VERSION;
   journeyId: string;
+  configSignature: string;
   activeCheckpointId: string;
   moveCount: number;
 }
@@ -70,6 +72,7 @@ export function createPixelQuestState(
   return {
     version: PIXEL_QUEST_PROGRESS_VERSION,
     journeyId,
+    configSignature: pixelQuestConfigSignature(config),
     activeCheckpointId: config.zones[0]?.id ?? "childhood-home",
     moveCount: 0,
     hydrated: false,
@@ -137,6 +140,7 @@ export function pixelQuestProgress(state: PixelQuestState): PixelQuestProgress {
   return {
     version: state.version,
     journeyId: state.journeyId,
+    configSignature: state.configSignature,
     activeCheckpointId: state.activeCheckpointId,
     moveCount: state.moveCount,
   };
@@ -159,6 +163,7 @@ function restorePixelQuestState(
   if (
     candidate.version !== PIXEL_QUEST_PROGRESS_VERSION
     || candidate.journeyId !== state.journeyId
+    || candidate.configSignature !== pixelQuestConfigSignature(action.config)
     || !isMemoryStationEnabled(
       activeIndex,
       action.completedChapterCount,

@@ -1,4 +1,5 @@
 import { encryptSecret } from "./crypto";
+import { DEFAULT_PIXEL_QUEST, pixelQuestToJson } from "./dto";
 import { APP_TIMEZONE, type Campaign, type Chapter, type Recipient, type Voucher, type Workspace } from "./types";
 import { nowIso } from "./time";
 
@@ -135,7 +136,7 @@ export function createDemoData(): DemoData {
     campaignId,
     recipientId: seed.id,
     codeCiphertext: encryptSecret(seed.voucherCode),
-    codeHint: "Mã quà chỉ mở sau bốn trạm ký ức",
+    codeHint: "Mã quà chỉ mở sau khi máy chủ xác nhận đủ năm trạm ký ức",
     title: seed.voucherTitle,
     description: `Voucher cá nhân cho ${seed.displayName}.`,
     terms: "Dùng một lần, ưu tiên ngày rảnh của người nhận.",
@@ -252,55 +253,25 @@ function chapterCopies(
 }
 
 function pixelQuestFor(displayName: string) {
-  return {
-    version: 2,
-    preset: "childhood-memory-atlas",
-    mapWidthPx: 1200,
-    mapHeightPx: 760,
-    zones: [
-      {
-        id: "childhood-home",
-        title: "Ngôi nhà tuổi thơ",
-        scene: "childhood-home",
-        mapXPercent: 14,
-        mapYPercent: 73,
-        npcLine: `${displayName} ơi, cánh cửa nhỏ đang giữ nơi câu chuyện bắt đầu.`,
-      },
-      {
-        id: "summer-playground",
-        title: "Sân chơi mùa hè",
-        scene: "summer-playground",
-        mapXPercent: 34,
-        mapYPercent: 43,
-        npcLine: `Một buổi chiều đầy nắng của ${displayName} vẫn còn nằm giữa sân chơi này.`,
-      },
-      {
-        id: "old-classroom",
-        title: "Lớp học ngày xưa",
-        scene: "old-classroom",
-        mapXPercent: 53,
-        mapYPercent: 66,
-        npcLine: `Bàn học cũ giữ lại một điều từng khiến ${displayName} thật tự hào.`,
-      },
-      {
-        id: "dream-road",
-        title: "Con đường ước mơ",
-        scene: "dream-road",
-        mapXPercent: 72,
-        mapYPercent: 34,
-        npcLine: `Con đường này đi qua những ước mơ nhỏ ${displayName} từng tin là thật.`,
-      },
-      {
-        id: "new-age-gate",
-        title: "Cổng tuổi mới",
-        scene: "new-age-gate",
-        mapXPercent: 88,
-        mapYPercent: 69,
-        npcLine: `Bốn mảnh ký ức đã sáng. Món quà riêng của ${displayName} đang ở phía sau cổng.`,
-      },
-    ],
-    noFailPath: true,
-  };
+  const lines = [
+    `${displayName} ơi, cánh cửa nhỏ đang giữ nơi câu chuyện bắt đầu.`,
+    `Một buổi chiều đầy nắng của ${displayName} vẫn còn nằm giữa sân chơi này.`,
+    `Bàn học cũ giữ lại một điều từng khiến ${displayName} thật tự hào.`,
+    `Con đường này đi qua những ước mơ nhỏ ${displayName} từng tin là thật.`,
+    `Bốn mảnh ký ức đầu đã sáng. Món quà riêng của ${displayName} đang ở phía sau cổng.`,
+  ];
+  const zones = DEFAULT_PIXEL_QUEST.zones.map((zone, index) => ({
+    ...zone,
+    npcLine: lines[index] ?? zone.npcLine,
+  }));
+  return pixelQuestToJson({
+    ...DEFAULT_PIXEL_QUEST,
+    zones,
+    npcs: DEFAULT_PIXEL_QUEST.npcs.map((npc, index) => ({
+      ...npc,
+      line: lines[index] ?? npc.line,
+    })),
+  });
 }
 
 function chapterId(recipientIndex: number, orderIndex: number): string {

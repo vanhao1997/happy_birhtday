@@ -20,10 +20,11 @@ import {
 import { initialsFromName, toBirthdaySlug } from "../birthday/content";
 import type { ApiStatus } from "../birthday/types";
 import { apiErrorMessage } from "@/lib/api-error";
-import { DEFAULT_PIXEL_QUEST } from "@/lib/birthday/dto";
+import { DEFAULT_PIXEL_QUEST, pixelQuestToJson } from "@/lib/birthday/dto";
 import type {
   AdminCampaignAnalyticsResult,
   ChapterGameType,
+  MemoryQuestType,
   PixelCharacterArchetype,
 } from "@/lib/birthday/types";
 
@@ -45,6 +46,15 @@ type EditableChapter = {
 type EditableMemoryPhoto = {
   url: string;
   caption: string;
+  title: string;
+  npcName: string;
+  npcRole: string;
+  npcLine: string;
+  questType: MemoryQuestType;
+  questTitle: string;
+  questPrompt: string;
+  questTargetLabel: string;
+  questCompletionLine: string;
 };
 
 const CHAPTER_GAME_LABELS: Record<ChapterGameType, string> = {
@@ -78,7 +88,7 @@ function formatPercent(value: number) {
 }
 
 function formatDuration(value: number | null) {
-  if (value === null) return "—";
+  if (value === null) return "-";
   const minutes = Math.floor(value / 60_000);
   const seconds = Math.round((value % 60_000) / 1000);
   return `${minutes}p ${seconds}s`;
@@ -117,8 +127,8 @@ type AdminIdentity = {
 
 const ADMIN_STEPS = [
   "Chiến dịch",
-  "Người nhận",
-  "Bốn ký ức",
+  "Người chơi",
+  "Năm trạm",
   "Lời nhắn",
   "Voucher",
   "Preview",
@@ -174,22 +184,47 @@ function chapterSet(name: string, role: string): EditableChapter[] {
   ];
 }
 
-function memoryMapFor(displayName: string) {
+function memoryMapFor(displayName: string, stations: EditableMemoryPhoto[]) {
   const name = displayName.trim() || "bạn";
   const lines = [
     `${name} ơi, cánh cửa nhỏ đang giữ nơi câu chuyện bắt đầu.`,
     `Một buổi chiều đầy nắng của ${name} vẫn còn nằm giữa sân chơi này.`,
     `Bàn học cũ giữ lại một điều từng khiến ${name} thật tự hào.`,
     `Con đường này đi qua những ước mơ nhỏ ${name} từng tin là thật.`,
-    `Bốn mảnh ký ức đã sáng. Món quà riêng của ${name} đang ở phía sau cổng.`,
+    `Bốn mảnh ký ức đầu đã sáng. Món quà riêng của ${name} đang ở phía sau cổng.`,
   ];
+
+  const zones = DEFAULT_PIXEL_QUEST.zones.map((zone, index) => ({
+    ...zone,
+    title: stations[index]?.title.trim() || zone.title,
+    npcLine: stations[index]?.npcLine.trim() || lines[index] || zone.npcLine,
+  }));
 
   return {
     ...DEFAULT_PIXEL_QUEST,
-    zones: DEFAULT_PIXEL_QUEST.zones.map((zone, index) => ({
-      ...zone,
-      npcLine: lines[index] ?? zone.npcLine,
+    zones,
+    quests: DEFAULT_PIXEL_QUEST.quests.map((quest, index) => ({
+      ...quest,
+      nodeId: zones[index]?.id ?? quest.nodeId,
+      type: stations[index]?.questType ?? quest.type,
+      title: stations[index]?.questTitle.trim() || quest.title,
+      prompt: stations[index]?.questPrompt.trim() || quest.prompt,
+      targetLabel: stations[index]?.questTargetLabel.trim() || quest.targetLabel,
+      completionLine: stations[index]?.questCompletionLine.trim() || quest.completionLine,
     })),
+    npcs: zones.map((zone, index) => {
+      const station = stations[index];
+      const fallback = DEFAULT_PIXEL_QUEST.npcs[index]
+        ?? DEFAULT_PIXEL_QUEST.npcs[index % DEFAULT_PIXEL_QUEST.npcs.length];
+      return {
+        id: fallback?.id ?? `npc-${zone.id}`,
+        nodeId: zone.id,
+        name: station?.npcName.trim() || fallback?.name || "Người giữ cổng",
+        role: station?.npcRole.trim() || fallback?.role || "Người dẫn đường",
+        line: station?.npcLine.trim() || lines[index] || zone.npcLine,
+        archetype: fallback?.archetype ?? "guide",
+      };
+    }),
   };
 }
 
@@ -201,7 +236,24 @@ function recipientSeed(index: number, name: string, role: string): EditableRecip
     relationLabel: role,
     birthdayDate: `199${index + 3}-08-${String(index * 8 + 5).padStart(2, "0")}`,
     avatarUrl: "",
-    childhoodPhotos: Array.from({ length: 5 }, () => ({ url: "", caption: "" })),
+    childhoodPhotos: DEFAULT_PIXEL_QUEST.zones.map((zone, stationIndex) => {
+      const quest = DEFAULT_PIXEL_QUEST.quests[stationIndex]!;
+      const npc = DEFAULT_PIXEL_QUEST.npcs[stationIndex]
+        ?? DEFAULT_PIXEL_QUEST.npcs[stationIndex % DEFAULT_PIXEL_QUEST.npcs.length];
+      return {
+        url: "",
+        caption: "",
+        title: zone.title,
+        npcName: npc?.name ?? "Người giữ cổng",
+        npcRole: npc?.role ?? "Người dẫn đường",
+        npcLine: zone.npcLine,
+        questType: quest.type,
+        questTitle: quest.title,
+        questPrompt: quest.prompt,
+        questTargetLabel: quest.targetLabel,
+        questCompletionLine: quest.completionLine,
+      };
+    }),
     accent: tones[(index - 1) % tones.length],
     character: index % 2 === 0 ? "Người dẫn đường bình tĩnh" : "Người giữ nhịp ấm áp",
     childCharacterName: `Bé ${name}`,
@@ -216,7 +268,7 @@ function recipientSeed(index: number, name: string, role: string): EditableRecip
     voucherTitle: index % 2 === 0 ? "Voucher ăn trưa cùng đội" : "Phiếu cà phê sáng",
     voucherDescription: `Một món quà nhỏ dành riêng cho ${name}.`,
     voucherCode: `${toBirthdaySlug(name).toUpperCase()}-THANG-8`,
-    voucherHint: "Mã dùng một lần sau khi hoàn tất bốn trạm ký ức",
+    voucherHint: "Mã dùng một lần sau khi máy chủ xác nhận đủ năm trạm ký ức",
     voucherTerms: "Dùng một lần, ưu tiên lịch của người nhận.",
     voucherExpiresAt: "",
   };
@@ -272,7 +324,7 @@ export function AdminCampaignStudio() {
   const [analyticsMessage, setAnalyticsMessage] = useState("");
   const [campaign, setCampaign] = useState({
     title: "Tháng 8 rực rỡ",
-    subtitle: "Bốn mảnh ghép nhỏ dành cho đồng đội tháng 8",
+    subtitle: "Năm trạm ký ức dành riêng cho đồng đội tháng 8",
     slug: "thang-8-ruc-ro",
     startsAt: new Date().toISOString().slice(0, 10),
     endsAt: "",
@@ -466,8 +518,19 @@ export function AdminCampaignStudio() {
       if (recipient.childhoodPhotos.some((photo) => !isHttpsUrl(photo.url))) {
         return `Album tuổi thơ của ${recipient.displayName} chỉ nhận URL HTTPS hợp lệ.`;
       }
+      if (recipient.childhoodPhotos.length !== 5 || recipient.childhoodPhotos.some((station) => (
+        !station.title.trim()
+        || !station.npcName.trim()
+        || !station.npcLine.trim()
+        || !station.questTitle.trim()
+        || !station.questPrompt.trim()
+        || !station.questTargetLabel.trim()
+        || !station.questCompletionLine.trim()
+      ))) {
+        return `${recipient.displayName} cần đủ nội dung NPC và nhiệm vụ cho năm trạm.`;
+      }
       if (recipient.chapters.length !== 4 || recipient.chapters.some((chapter) => chapter.options.length < 1)) {
-        return `${recipient.displayName} cần đủ bốn mảnh ký ức và mốc tiến trình nội bộ.`;
+        return `${recipient.displayName} cần đủ bốn chương nội dung và mốc tiến trình nội bộ.`;
       }
       if (!recipient.voucherCode.trim() || !recipient.voucherTitle.trim()) {
         return `${recipient.displayName} chưa có mã voucher.`;
@@ -507,7 +570,12 @@ export function AdminCampaignStudio() {
             startsAt: toBangkokIso(campaign.startsAt),
             endsAt: toBangkokIso(campaign.endsAt),
             theme: { name: "hum", palette: "cream-pear-cyan-coral" },
-            settings: { audioDefault: false, trustModel: "recipient_picker" },
+            settings: {
+              audioDefault: false,
+              trustModel: "recipient_picker",
+              worldPreset: "childhood-memory-atlas",
+              worldVersion: 3,
+            },
           }),
         });
         campaignId = (data.campaign as { id: string }).id;
@@ -524,8 +592,11 @@ export function AdminCampaignStudio() {
             }));
           const visibleMessage =
             recipient.consentStatus === "approved"
-              ? `“${recipient.messageBody}” — ${recipient.messageSender}`
+              ? `“${recipient.messageBody}” - ${recipient.messageSender}`
               : "Lời nhắn đang chờ đồng ý sử dụng.";
+          const pixelQuest = pixelQuestToJson(
+            memoryMapFor(recipient.displayName, recipient.childhoodPhotos),
+          );
           const chapters = recipient.chapters.map((chapter) => ({
             ...chapter,
             body: chapter.orderIndex === 3 ? `${chapter.body}\n\n${visibleMessage}` : chapter.body,
@@ -535,7 +606,7 @@ export function AdminCampaignStudio() {
               estimatedSeconds: 75,
               noFailPath: true,
               memoryImages: chapter.orderIndex === 1 ? memoryImages : [],
-              pixelQuest: memoryMapFor(recipient.displayName),
+              pixelQuest,
             },
           }));
 
@@ -607,9 +678,9 @@ export function AdminCampaignStudio() {
     <main className="admin-page">
       <section className="admin-login-panel" aria-labelledby="admin-title">
         <div>
-          <p className="eyebrow">Admin riêng</p>
-          <h1 id="admin-title">Tạo một link chung, giữ từng câu chuyện riêng</h1>
-          <p>Magic link xác thực qua Supabase. Wizard chỉ mở sau khi server kiểm tra quyền workspace.</p>
+          <p className="eyebrow">Birthday Game Studio</p>
+          <h1 id="admin-title">Thiết kế một Farm RPG riêng cho từng người</h1>
+          <p>Chỉnh nhân vật, năm trạm, NPC, nhiệm vụ, ảnh ký ức và voucher trong một luồng xuất bản.</p>
         </div>
 
         <form className="admin-login-form" onSubmit={requestMagicLink}>
@@ -679,8 +750,8 @@ export function AdminCampaignStudio() {
         <>
           <section className="wizard-shell" aria-labelledby="wizard-title">
           <aside className="wizard-steps">
-            <p className="eyebrow">Wizard tháng 8</p>
-            <h2 id="wizard-title">Cấu hình chiến dịch</h2>
+            <p className="eyebrow">Game Studio tháng 8</p>
+            <h2 id="wizard-title">Birthday Game Studio</h2>
             <ol>
               {ADMIN_STEPS.map((label, index) => (
                 <li key={label} className={step === index ? "is-current" : ""}>
@@ -824,22 +895,63 @@ export function AdminCampaignStudio() {
 
             {step === 2 ? (
               <div className="chapter-plan">
-                <h3>Bốn mảnh ký ức của {currentRecipient.displayName}</h3>
-                {currentRecipient.chapters.map((chapter, chapterIndex) => (
-                  <fieldset className="form-panel" key={chapter.orderIndex}>
-                    <legend>Mảnh ký ức {chapter.orderIndex}</legend>
-                    <small className="chapter-kind">
-                      {CHAPTER_GAME_LABELS[chapter.gameType]} · khoảng 1 phút
-                    </small>
-                    <label htmlFor={`chapter-title-${chapter.orderIndex}`}>Tiêu đề</label>
-                    <input id={`chapter-title-${chapter.orderIndex}`} value={chapter.title} onChange={(event) => updateChapter(chapterIndex, { title: event.target.value })} />
-                    <label htmlFor={`chapter-body-${chapter.orderIndex}`}>Nội dung cá nhân</label>
-                    <textarea id={`chapter-body-${chapter.orderIndex}`} value={chapter.body} onChange={(event) => updateChapter(chapterIndex, { body: event.target.value })} />
-                    <label htmlFor={`chapter-prompt-${chapter.orderIndex}`}>Dòng dẫn trên hành trình</label>
-                    <input id={`chapter-prompt-${chapter.orderIndex}`} value={chapter.prompt} onChange={(event) => updateChapter(chapterIndex, { prompt: event.target.value })} />
-                    <small>Mốc tiến trình được hệ thống ghi ngầm khi người chơi mở trạm; không có câu hỏi hiển thị.</small>
-                  </fieldset>
-                ))}
+                <h3>Năm trạm ký ức của {currentRecipient.displayName}</h3>
+                <p className="privacy-note">Layout Farm cố định. Mỗi trạm đổi câu chuyện, NPC, nhiệm vụ và ảnh; không có quiz hoặc nhánh thất bại.</p>
+                {currentRecipient.childhoodPhotos.map((station, stationIndex) => {
+                  const chapter = currentRecipient.chapters[stationIndex];
+                  const stationNumber = stationIndex + 1;
+                  return (
+                    <fieldset className="form-panel memory-station-editor" key={`memory-station-${stationNumber}`}>
+                      <legend>Trạm {stationNumber}: {station.title}</legend>
+                      <small className="chapter-kind">{stationIndex < 4 ? `${CHAPTER_GAME_LABELS[chapter!.gameType]} · khoảng 1 phút` : "Cổng cuối · server xác nhận trước khi mở voucher"}</small>
+
+                      <label htmlFor={`station-title-${stationNumber}`}>Tên khu vực</label>
+                      <input id={`station-title-${stationNumber}`} value={station.title} onChange={(event) => updateChildhoodPhoto(stationIndex, { title: event.target.value })} />
+
+                      <div className="memory-station-editor__grid">
+                        <div>
+                          <label htmlFor={`station-npc-name-${stationNumber}`}>Tên NPC</label>
+                          <input id={`station-npc-name-${stationNumber}`} value={station.npcName} onChange={(event) => updateChildhoodPhoto(stationIndex, { npcName: event.target.value })} />
+                        </div>
+                        <div>
+                          <label htmlFor={`station-npc-role-${stationNumber}`}>Vai trò NPC</label>
+                          <input id={`station-npc-role-${stationNumber}`} value={station.npcRole} onChange={(event) => updateChildhoodPhoto(stationIndex, { npcRole: event.target.value })} />
+                        </div>
+                      </div>
+                      <label htmlFor={`station-npc-line-${stationNumber}`}>Lời thoại trong world</label>
+                      <textarea id={`station-npc-line-${stationNumber}`} value={station.npcLine} maxLength={180} onChange={(event) => updateChildhoodPhoto(stationIndex, { npcLine: event.target.value })} />
+
+                      <label htmlFor={`station-quest-type-${stationNumber}`}>Loại nhiệm vụ môi trường</label>
+                      <select id={`station-quest-type-${stationNumber}`} value={station.questType} onChange={(event) => updateChildhoodPhoto(stationIndex, { questType: event.target.value as MemoryQuestType })}>
+                        <option value="collect">Nhặt mảnh ký ức</option>
+                        <option value="talk">Nói chuyện với NPC</option>
+                        <option value="activate">Kích hoạt vật thể</option>
+                        <option value="deliver">Đưa vật phẩm</option>
+                        <option value="story">Mở nút kể chuyện</option>
+                      </select>
+                      <label htmlFor={`station-quest-title-${stationNumber}`}>Tên nhiệm vụ</label>
+                      <input id={`station-quest-title-${stationNumber}`} value={station.questTitle} onChange={(event) => updateChildhoodPhoto(stationIndex, { questTitle: event.target.value })} />
+                      <label htmlFor={`station-quest-prompt-${stationNumber}`}>Hướng dẫn người chơi</label>
+                      <input id={`station-quest-prompt-${stationNumber}`} value={station.questPrompt} onChange={(event) => updateChildhoodPhoto(stationIndex, { questPrompt: event.target.value })} />
+                      <label htmlFor={`station-quest-target-${stationNumber}`}>Tên vật thể mục tiêu</label>
+                      <input id={`station-quest-target-${stationNumber}`} value={station.questTargetLabel} onChange={(event) => updateChildhoodPhoto(stationIndex, { questTargetLabel: event.target.value })} />
+                      <label htmlFor={`station-quest-complete-${stationNumber}`}>Dòng hoàn thành</label>
+                      <input id={`station-quest-complete-${stationNumber}`} value={station.questCompletionLine} onChange={(event) => updateChildhoodPhoto(stationIndex, { questCompletionLine: event.target.value })} />
+
+                      {chapter ? (
+                        <>
+                          <label htmlFor={`chapter-body-${chapter.orderIndex}`}>Đoạn kể ký ức cá nhân</label>
+                          <textarea id={`chapter-body-${chapter.orderIndex}`} value={chapter.body} onChange={(event) => updateChapter(stationIndex, { body: event.target.value, title: station.title, prompt: station.questPrompt })} />
+                        </>
+                      ) : null}
+
+                      <label htmlFor={`station-photo-url-${stationNumber}`}>URL ảnh ký ức</label>
+                      <input id={`station-photo-url-${stationNumber}`} type="url" value={station.url} placeholder="https://..." aria-invalid={!isHttpsUrl(station.url)} onChange={(event) => updateChildhoodPhoto(stationIndex, { url: event.target.value })} />
+                      <label htmlFor={`station-photo-caption-${stationNumber}`}>Caption ảnh</label>
+                      <input id={`station-photo-caption-${stationNumber}`} value={station.caption} maxLength={240} onChange={(event) => updateChildhoodPhoto(stationIndex, { caption: event.target.value })} />
+                    </fieldset>
+                  );
+                })}
               </div>
             ) : null}
 
@@ -883,7 +995,7 @@ export function AdminCampaignStudio() {
                 <dl>
                   <div><dt>Link</dt><dd>/birthday/{toBirthdaySlug(campaign.slug)}</dd></div>
                   <div><dt>Người nhận</dt><dd>{recipients.length}</dd></div>
-                  <div><dt>Mỗi hành trình</dt><dd>4 chương, không có nhánh thất bại</dd></div>
+                  <div><dt>Mỗi hành trình</dt><dd>5 trạm, 4 chương nội dung, không có nhánh thất bại</dd></div>
                   <div><dt>Timezone</dt><dd>Asia/Bangkok</dd></div>
                 </dl>
                 {saveMessage ? (
@@ -953,7 +1065,7 @@ export function AdminCampaignStudio() {
                   <p className="eyebrow">Trạng thái chiến dịch</p>
                   <h2 id="analytics-title">Theo dõi hành trình</h2>
                 </div>
-                <small>Realtime từ server · tự làm mới mỗi 60 giây · Asia/Bangkok</small>
+              <small>Realtime từ server · tự làm mới mỗi 60 giây · Asia/Bangkok</small>
               </header>
 
               {analyticsStatus === "error" ? (
@@ -970,6 +1082,8 @@ export function AdminCampaignStudio() {
                     <div><dt>Hoàn thành</dt><dd>{formatPercent(analytics.totals.completionRate)}</dd></div>
                     <div><dt>Mở voucher</dt><dd>{formatPercent(analytics.totals.voucherRevealRate)}</dd></div>
                     <div><dt>Thời lượng TB</dt><dd>{formatDuration(analytics.totals.averageDurationMs)}</dd></div>
+                    <div><dt>Thử lại quest</dt><dd>{formatPercent(analytics.totals.questRetryRate)}</dd></div>
+                    <div><dt>Quay lại trạm</dt><dd>{formatPercent(analytics.totals.revisitRate)}</dd></div>
                   </dl>
 
                   <div className="recipient-status-list">
@@ -988,6 +1102,16 @@ export function AdminCampaignStudio() {
                         <span>Chương {chapter.chapterOrder}</span>
                         <strong>{formatPercent(chapter.dropOffRate)}</strong>
                         <small>{chapter.advanced}/{chapter.arrived} đi tiếp</small>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="dropoff-list" aria-label="Rời bỏ theo trạm ký ức">
+                    {analytics.nodeDropOff.map((node) => (
+                      <div key={node.nodeId}>
+                        <span>Trạm {node.nodeOrder}</span>
+                        <strong>{formatPercent(node.dropOffRate)}</strong>
+                        <small>{node.completed}/{node.arrived} hoàn thành</small>
                       </div>
                     ))}
                   </div>

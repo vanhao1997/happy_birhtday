@@ -158,7 +158,7 @@ Dashboard không chứa voucher code, token hash, IP thô hoặc nội dung lờ
 
 Rủi ro còn lại:
 
-- `recordChoice` trên Supabase dùng nhiều REST request, chưa phải một Postgres RPC transaction; concurrent retry hiếm có thể tạo cạnh tranh trạng thái.
+- `recordChoice` và Story RPG progress dùng Postgres RPC có khóa session, idempotency key và duplicate-safe response; vẫn cần DB smoke test trong CI để chống regression migration/RPC.
 - Tạo recipient/chapter/message/voucher là workflow nhiều bước; lỗi giữa chừng giữ campaign ở draft nhưng có thể để dữ liệu một phần.
 - Dashboard REST hiện đọc tối đa page mặc định của Supabase; chiến dịch lớn cần pagination/RPC aggregation ở V1.
 - Trust model không ngăn người có link xem voucher của người khác.

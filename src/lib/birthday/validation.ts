@@ -13,6 +13,7 @@ import {
   type ChapterOption,
   type JsonObject,
   type RecordChoiceInput,
+  type RecordQuestProgressInput,
   type RecipientStatus,
   type StartSessionInput,
   type PixelQuestEventName,
@@ -158,6 +159,36 @@ export function parseRecordChoice(body: JsonObject): RecordChoiceInput {
   };
 }
 
+export function parseQuestProgress(body: JsonObject): RecordQuestProgressInput {
+  const elapsedMs = body.elapsedMs;
+  if (
+    elapsedMs !== undefined
+    && elapsedMs !== null
+    && (
+      typeof elapsedMs !== "number"
+      || !Number.isInteger(elapsedMs)
+      || elapsedMs < 0
+      || elapsedMs > 60 * 60 * 1000
+    )
+  ) {
+    throw badRequest("elapsedMs must be an integer between 0 and 3600000");
+  }
+
+  const nodeId = requiredString(body.nodeId, "nodeId", 64);
+  const objectiveId = requiredString(body.objectiveId, "objectiveId", 64);
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(nodeId) || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(objectiveId)) {
+    throw badRequest("nodeId and objectiveId must be lowercase slugs");
+  }
+
+  return {
+    chapterId: assertUuid(body.chapterId, "chapterId"),
+    nodeId,
+    objectiveId,
+    clientEventId: requiredString(body.clientEventId, "clientEventId", 128),
+    elapsedMs: typeof elapsedMs === "number" ? elapsedMs : null,
+  };
+}
+
 export function parsePixelQuestEvent(body: JsonObject): TrackPixelQuestEventInput {
   const eventName = body.eventName;
   if (!PIXEL_QUEST_EVENT_NAMES.includes(eventName as PixelQuestEventName)) {
@@ -165,11 +196,18 @@ export function parsePixelQuestEvent(body: JsonObject): TrackPixelQuestEventInpu
   }
 
   const checkpointId = optionalString(body.checkpointId, "checkpointId", 64);
+  const checkpointEvents: PixelQuestEventName[] = [
+    "pixel_quest_checkpoint",
+    "npc_dialog_opened",
+    "quest_started",
+    "memory_revealed",
+    "checkpoint_reached",
+  ];
   if (eventName === "pixel_quest_checkpoint" && !checkpointId) {
     throw badRequest("checkpointId is required for pixel_quest_checkpoint");
   }
-  if (eventName !== "pixel_quest_checkpoint" && checkpointId) {
-    throw badRequest("checkpointId is only allowed for pixel_quest_checkpoint");
+  if (!checkpointEvents.includes(eventName as PixelQuestEventName) && checkpointId) {
+    throw badRequest("checkpointId is not allowed for this eventName");
   }
 
   const moveCount = body.moveCount;

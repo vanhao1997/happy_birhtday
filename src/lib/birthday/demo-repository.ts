@@ -18,6 +18,8 @@ import {
   type PublicCampaignResult,
   type RecordChoiceInput,
   type RecordChoiceResult,
+  type RecordQuestProgressInput,
+  type RecordQuestProgressResult,
   type RequestContext,
   type StartSessionInput,
   type StartSessionResult,
@@ -111,6 +113,9 @@ export class DemoBirthdayRepository implements BirthdayRepository {
       completedAt: null,
       voucherRevealedAt: null,
       lastSeenAt: timestamp,
+      worldVersion: 3,
+      lastCheckpointNode: null,
+      stateVersion: 1,
       metadata: {},
     };
 
@@ -163,6 +168,7 @@ export class DemoBirthdayRepository implements BirthdayRepository {
     if (existingChoice) {
       const nextChapter = this.nextChapter(session);
       return {
+        duplicate: true,
         session: toPublicSessionDTO(session),
         acceptedChoice: {
           chapterId: existingChoice.chapterId,
@@ -208,11 +214,6 @@ export class DemoBirthdayRepository implements BirthdayRepository {
     session.currentChapterOrder = completedChapters + 1;
     session.lastSeenAt = nowIso();
 
-    if (completedChapters >= REQUIRED_CHAPTER_COUNT) {
-      session.status = "completed";
-      session.completedAt = session.completedAt ?? nowIso();
-    }
-
     this.trackEvent(
       "choice_recorded",
       session,
@@ -225,6 +226,7 @@ export class DemoBirthdayRepository implements BirthdayRepository {
     const nextChapter = this.nextChapter(session);
 
     return {
+      duplicate: false,
       session: toPublicSessionDTO(session),
       acceptedChoice: {
         chapterId: chapter.id,
@@ -236,6 +238,111 @@ export class DemoBirthdayRepository implements BirthdayRepository {
     };
   }
 
+  async recordQuestProgress(
+    token: string,
+    input: RecordQuestProgressInput,
+    context: RequestContext,
+  ): Promise<RecordQuestProgressResult> {
+    const session = this.findSessionByToken(token);
+    const chapter = this.data.chapters.find(
+      (item) => item.id === input.chapterId
+        && item.workspaceId === session.workspaceId
+        && item.campaignId === session.campaignId
+        && item.recipientId === session.recipientId
+        && item.isPublished,
+    );
+    if (!chapter) throw notFound("Chapter not found for session");
+
+    const publicChapter = toPublicChapterDTO(chapter);
+    const quest = publicChapter.pixelQuest.quests.find(
+      (candidate) => candidate.nodeId === input.nodeId && candidate.id === input.objectiveId,
+    );
+    const expectedNode = publicChapter.pixelQuest.zones[chapter.orderIndex - 1];
+    const finalNode = publicChapter.pixelQuest.zones[REQUIRED_CHAPTER_COUNT];
+    const isFinalGate = chapter.orderIndex === REQUIRED_CHAPTER_COUNT
+      && session.completedChapters >= REQUIRED_CHAPTER_COUNT
+      && finalNode?.id === input.nodeId
+      && quest?.nodeId === finalNode.id;
+
+    if (!quest || (!isFinalGate && (!expectedNode || expectedNode.id !== input.nodeId))) {
+      throw conflict("Quest objective is not active for this session");
+    }
+
+    if (isFinalGate) {
+      const duplicate = session.lastCheckpointNode === finalNode.id;
+      if (!duplicate) {
+        session.lastCheckpointNode = finalNode.id;
+        session.stateVersion += 1;
+        session.lastSeenAt = nowIso();
+        this.trackEvent(
+          "quest_objective_completed",
+          session,
+          chapter.id,
+          input.clientEventId,
+          context,
+          { nodeId: input.nodeId, objectiveId: input.objectiveId, elapsedMs: input.elapsedMs },
+        );
+      }
+
+      return {
+        accepted: true,
+        duplicate,
+        completed: true,
+        response: quest.completionLine,
+        session: toPublicSessionDTO(session),
+        nextChapter: null,
+      };
+    }
+
+    if (chapter.orderIndex <= session.completedChapters) {
+      const nextChapter = this.nextChapter(session);
+      return {
+        accepted: true,
+        duplicate: true,
+        completed: session.completedChapters >= REQUIRED_CHAPTER_COUNT,
+        response: chapter.options[0]?.response ?? null,
+        session: toPublicSessionDTO(session),
+        nextChapter: nextChapter ? toPublicChapterDTO(nextChapter) : null,
+      };
+    }
+
+    if (session.status !== "active") {
+      throw conflict("Session is already completed");
+    }
+    if (chapter.orderIndex !== session.currentChapterOrder) {
+      throw conflict("Quest objective is not active for this session");
+    }
+
+    const result = await this.recordChoice(token, {
+      chapterId: chapter.id,
+      choiceKey: chapter.options[0]?.key ?? "station-complete",
+      answerText: `Quest complete: ${quest.id}`,
+      clientEventId: input.clientEventId,
+      elapsedMs: input.elapsedMs,
+    }, context);
+
+    session.lastCheckpointNode = input.nodeId;
+    session.stateVersion += 1;
+    session.lastSeenAt = nowIso();
+    this.trackEvent(
+      "quest_objective_completed",
+      session,
+      chapter.id,
+      `quest:${input.clientEventId}`.slice(0, 128),
+      context,
+      { nodeId: input.nodeId, objectiveId: input.objectiveId, elapsedMs: input.elapsedMs },
+    );
+
+    return {
+      accepted: true,
+      duplicate: result.duplicate,
+      completed: result.completed,
+      response: result.acceptedChoice.response,
+      session: toPublicSessionDTO(session),
+      nextChapter: result.nextChapter,
+    };
+  }
+
   async completeSession(token: string, context: RequestContext): Promise<CompleteSessionResult> {
     const session = this.findSessionByToken(token);
     if (session.completedChapters < REQUIRED_CHAPTER_COUNT) {
@@ -243,6 +350,16 @@ export class DemoBirthdayRepository implements BirthdayRepository {
         completedChapters: session.completedChapters,
         requiredChapters: REQUIRED_CHAPTER_COUNT,
       });
+    }
+
+    const finalChapter = this.chapterForOrder(
+      session.campaignId,
+      session.recipientId,
+      REQUIRED_CHAPTER_COUNT,
+    );
+    const finalNode = toPublicChapterDTO(finalChapter).pixelQuest.zones[REQUIRED_CHAPTER_COUNT];
+    if (!finalNode || session.lastCheckpointNode !== finalNode.id) {
+      throw conflict("Final memory gate has not been confirmed by the server");
     }
 
     const voucher = this.data.vouchers.find(

@@ -15,11 +15,13 @@ import {
 } from "lucide-react";
 import { initialsFromName } from "./content";
 import { apiErrorMessage } from "@/lib/api-error";
+import { publicPixelQuest } from "@/lib/birthday/dto";
 import type {
   CompleteSessionResult,
   PublicCampaignDTO,
   PublicChapterDTO,
-  RecordChoiceResult,
+  PixelQuestEventName,
+  RecordQuestProgressResult,
   StartSessionResult,
 } from "@/lib/birthday/types";
 import type { ApiStatus, BirthdaySession } from "./types";
@@ -345,7 +347,7 @@ export function BirthdayExperience({ slug }: BirthdayExperienceProps) {
     };
   }
 
-  function trackJourneyEvent({
+  const trackJourneyEvent = useCallback(({
     token,
     chapterId,
     eventName,
@@ -354,10 +356,13 @@ export function BirthdayExperience({ slug }: BirthdayExperienceProps) {
   }: {
     token: string;
     chapterId: string;
-    eventName: "pixel_quest_started" | "pixel_quest_checkpoint" | "pixel_quest_completed";
+    eventName: PixelQuestEventName;
     checkpointId: string | null;
     moveCount: number;
-  }) {
+  }) => {
+    const stableLegacyEvent = eventName === "pixel_quest_started"
+      || eventName === "pixel_quest_checkpoint"
+      || eventName === "pixel_quest_completed";
     void fetch(`/api/sessions/${encodeURIComponent(token)}/events`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -365,18 +370,38 @@ export function BirthdayExperience({ slug }: BirthdayExperienceProps) {
         eventName,
         chapterId,
         checkpointId,
-        clientEventId: `memory-map:${eventName}:${chapterId}:${checkpointId ?? "complete"}`,
+        clientEventId: stableLegacyEvent
+          ? `memory-map:${eventName}:${chapterId}:${checkpointId ?? "complete"}`
+          : makeClientEventId(`memory-map-${eventName}`),
         moveCount,
       }),
     });
-  }
+  }, []);
+
+  const reportGameEvent = useCallback((
+    eventName: PixelQuestEventName,
+    checkpointId: string | null,
+    moveCount: number,
+  ) => {
+    const chapterId = remoteChapter?.id
+      ?? session.completedChapterIds.at(-1)
+      ?? journeyChapter?.id;
+    if (!session.token || !chapterId) return;
+    trackJourneyEvent({
+      token: session.token,
+      chapterId,
+      eventName,
+      checkpointId,
+      moveCount,
+    });
+  }, [journeyChapter?.id, remoteChapter?.id, session.completedChapterIds, session.token, trackJourneyEvent]);
 
   async function openMapStation(
     stationIndex: number,
     zone: PublicChapterDTO["pixelQuest"]["zones"][number],
     moveCount: number,
   ) {
-    if (journeyStatus === "loading") return;
+    if (journeyStatus === "loading") return false;
 
     setJourneyStatus("loading");
     setFeedbackMessage("");
@@ -385,7 +410,7 @@ export function BirthdayExperience({ slug }: BirthdayExperienceProps) {
       if (stationIndex < chapterCount) {
         if (stationIndex < completedCount) {
           setJourneyStatus("success");
-          return;
+          return true;
         }
 
         if (stationIndex !== completedCount) {
@@ -402,6 +427,12 @@ export function BirthdayExperience({ slug }: BirthdayExperienceProps) {
         const apiChoice = apiChapter.options[0];
         if (!apiChoice) {
           throw new Error("Trạm ký ức chưa có mốc tiến trình nội bộ.");
+        }
+        const apiQuest = publicPixelQuest(apiChapter.pixelQuest).quests.find(
+          (quest) => quest.nodeId === zone.id,
+        );
+        if (!apiQuest) {
+          throw new Error("Trạm ký ức chưa có nhiệm vụ được cấu hình.");
         }
 
         if (stationIndex === 0) {
@@ -422,20 +453,20 @@ export function BirthdayExperience({ slug }: BirthdayExperienceProps) {
         });
 
         const response = await fetch(
-          `/api/sessions/${encodeURIComponent(started.token)}/choices`,
+          `/api/sessions/${encodeURIComponent(started.token)}/progress`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               chapterId: apiChapter.id,
-              choiceKey: apiChoice.key,
-              answerText: `Đã khám phá ${zone.title}`,
-              clientEventId: `memory-map-choice:${apiChapter.id}`,
+              nodeId: zone.id,
+              objectiveId: apiQuest.id,
+              clientEventId: `memory-map-progress:${apiChapter.id}:${apiQuest.id}`,
               elapsedMs: null,
             }),
           },
         );
-        const result = await readApi<RecordChoiceResult>(
+        const result = await readApi<RecordQuestProgressResult>(
           response,
           "Không thể lưu trạm ký ức.",
         );
@@ -458,17 +489,43 @@ export function BirthdayExperience({ slug }: BirthdayExperienceProps) {
           journeyChapter: current.journeyChapter ?? apiChapter,
         }));
         setJourneyStatus("success");
-        setFeedbackMessage(result.acceptedChoice.response || "Mảnh ký ức đã được giữ lại.");
+        setFeedbackMessage(result.response || apiQuest.completionLine);
         playTone(340 + stationIndex * 52);
-        return;
+        return true;
       }
 
       if (completedCount < chapterCount) {
-        throw new Error("Cổng tuổi mới chỉ mở sau khi bốn mảnh ký ức đã sáng.");
+        throw new Error("Cổng tuổi mới chỉ mở sau khi bốn mảnh ký ức đầu đã sáng.");
       }
 
       const started = await ensureRemoteSession();
       const eventChapterId = session.completedChapterIds.at(-1) ?? journeyChapter?.id;
+      const finalQuest = publicPixelQuest(journeyChapter?.pixelQuest).quests.find(
+        (quest) => quest.nodeId === zone.id,
+      );
+      if (!eventChapterId || !finalQuest) {
+        throw new Error("Cổng tuổi mới chưa có nhiệm vụ hoặc chương xác nhận trên máy chủ.");
+      }
+
+      const progressResponse = await fetch(
+        `/api/sessions/${encodeURIComponent(started.token)}/progress`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chapterId: eventChapterId,
+            nodeId: zone.id,
+            objectiveId: finalQuest.id,
+            clientEventId: `memory-map-progress:${eventChapterId}:${finalQuest.id}`,
+            elapsedMs: null,
+          }),
+        },
+      );
+      const finalProgress = await readApi<RecordQuestProgressResult>(
+        progressResponse,
+        "Không thể xác nhận cổng tuổi mới.",
+      );
+
       if (eventChapterId) {
         trackJourneyEvent({
           token: started.token,
@@ -494,14 +551,18 @@ export function BirthdayExperience({ slug }: BirthdayExperienceProps) {
       }));
       setJourneyStatus("success");
       setFeedbackMessage(
-        result.alreadyRevealed ? "Voucher đã được mở trước đó." : "Voucher đã mở.",
+        result.alreadyRevealed
+          ? "Voucher đã được mở trước đó."
+          : finalProgress.response || "Voucher đã mở.",
       );
       playTone(620);
+      return true;
     } catch (error) {
       setJourneyStatus("error");
       setFeedbackMessage(
         error instanceof Error ? error.message : "Không thể lưu tiến độ bản đồ.",
       );
+      return false;
     }
   }
 
@@ -591,7 +652,7 @@ export function BirthdayExperience({ slug }: BirthdayExperienceProps) {
             <p className="eyebrow">Thư viện sinh nhật</p>
             <h1 id="library-title">{publicCampaign.title}</h1>
             <p>{publicCampaign.subtitle || "Chọn tên để mở bản đồ tuổi thơ riêng."}</p>
-            <p className="library-meta">5 trạm ký ức · khoảng 5–7 phút · không có game over</p>
+            <p className="library-meta">5 trạm ký ức · khoảng 5-7 phút · không có game over</p>
             <small>
               Link dùng theo mô hình tin cậy: người có link có thể chọn bất kỳ tên nào.
             </small>
@@ -723,6 +784,7 @@ export function BirthdayExperience({ slug }: BirthdayExperienceProps) {
                 status={journeyStatus}
                 errorMessage={feedbackMessage}
                 onOpenStation={openMapStation}
+                onGameEvent={reportGameEvent}
               />
 
               {session.voucher ? (
@@ -730,7 +792,7 @@ export function BirthdayExperience({ slug }: BirthdayExperienceProps) {
                   <p className="eyebrow">Cổng tuổi mới đã mở</p>
                   <h2 id="voucher-title">Voucher của {session.selectedName}</h2>
                   <p>
-                    Máy chủ đã xác nhận đủ bốn mảnh ký ức. Mã quà chỉ xuất hiện trong khung này.
+                    Máy chủ đã xác nhận đủ năm trạm ký ức. Mã quà chỉ xuất hiện trong khung này.
                   </p>
                   <div className="claim-success" role="status">
                     <div>

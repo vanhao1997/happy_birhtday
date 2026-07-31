@@ -13,6 +13,8 @@ import type {
   Recipient,
   RecordChoiceInput,
   RecordChoiceResult,
+  RecordQuestProgressInput,
+  RecordQuestProgressResult,
   RequestContext,
   StartSessionInput,
   StartSessionResult,
@@ -34,6 +36,11 @@ export interface BirthdayRepository {
     input: RecordChoiceInput,
     context: RequestContext,
   ): Promise<RecordChoiceResult>;
+  recordQuestProgress(
+    token: string,
+    input: RecordQuestProgressInput,
+    context: RequestContext,
+  ): Promise<RecordQuestProgressResult>;
   completeSession(token: string, context: RequestContext): Promise<CompleteSessionResult>;
   trackPixelQuestEvent(
     token: string,

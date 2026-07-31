@@ -346,7 +346,7 @@ export function ChildhoodMemoryMap({
   }
 
   const mapStyle = {
-    "--map-ratio": `${pixelQuest.mapWidthPx} / ${pixelQuest.mapHeightPx}`,
+    "--map-ratio": `${pixelQuest.world.widthPx} / ${pixelQuest.world.heightPx}`,
   } as CSSProperties;
   const characterStyle = {
     "--character-x": `${playerPosition.x}%`,

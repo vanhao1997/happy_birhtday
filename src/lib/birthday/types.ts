@@ -29,8 +29,26 @@ export const PIXEL_QUEST_EVENT_NAMES = [
   "pixel_quest_started",
   "pixel_quest_checkpoint",
   "pixel_quest_completed",
+  "world_loaded",
+  "intro_dismissed",
+  "npc_dialog_opened",
+  "quest_started",
+  "quest_objective_completed",
+  "memory_revealed",
+  "checkpoint_reached",
+  "pause",
+  "resume",
+  "session_abandoned",
 ] as const;
 export type PixelQuestEventName = (typeof PIXEL_QUEST_EVENT_NAMES)[number];
+export const MEMORY_QUEST_TYPES = [
+  "collect",
+  "talk",
+  "activate",
+  "deliver",
+  "story",
+] as const;
+export type MemoryQuestType = (typeof MEMORY_QUEST_TYPES)[number];
 
 export interface Workspace {
   id: string;
@@ -160,6 +178,9 @@ export interface GameSession {
   completedAt: string | null;
   voucherRevealedAt: string | null;
   lastSeenAt: string;
+  worldVersion: number;
+  lastCheckpointNode: string | null;
+  stateVersion: number;
   metadata: JsonObject;
 }
 
@@ -276,12 +297,45 @@ export interface PublicPixelQuestZoneDTO {
   npcLine: string;
 }
 
-export interface PublicPixelQuestConfigDTO {
-  version: 2;
+export interface PublicMemoryQuestDTO {
+  id: string;
+  nodeId: string;
+  type: MemoryQuestType;
+  title: string;
+  prompt: string;
+  targetLabel: string;
+  completionLine: string;
+}
+
+export interface PublicMemoryNpcDTO {
+  id: string;
+  nodeId: string;
+  name: string;
+  role: string;
+  line: string;
+  archetype: "soldier" | "orc" | "guide";
+}
+
+export interface PublicPixelQuestWorldDTO {
   preset: "childhood-memory-atlas";
-  mapWidthPx: number;
-  mapHeightPx: number;
+  widthPx: number;
+  heightPx: number;
+  cameraZoom: number;
+  playerRadiusPx: number;
+  stationRadiusPx: number;
+  spawnPoint: {
+    x: number;
+    y: number;
+  };
+}
+
+export interface PublicPixelQuestConfigDTO {
+  version: 3;
+  preset: "childhood-memory-atlas";
+  world: PublicPixelQuestWorldDTO;
   zones: PublicPixelQuestZoneDTO[];
+  quests: PublicMemoryQuestDTO[];
+  npcs: PublicMemoryNpcDTO[];
   noFailPath: true;
 }
 
@@ -307,6 +361,9 @@ export interface PublicSessionDTO {
   startedAt: string;
   completedAt: string | null;
   voucherRevealedAt: string | null;
+  worldVersion: number;
+  lastCheckpointNode: string | null;
+  stateVersion: number;
 }
 
 export interface VoucherRevealDTO {
@@ -347,6 +404,23 @@ export interface TrackPixelQuestEventInput {
   moveCount: number | null;
 }
 
+export interface RecordQuestProgressInput {
+  chapterId: string;
+  nodeId: string;
+  objectiveId: string;
+  clientEventId: string;
+  elapsedMs: number | null;
+}
+
+export interface RecordQuestProgressResult {
+  accepted: true;
+  duplicate: boolean;
+  completed: boolean;
+  response: string | null;
+  session: PublicSessionDTO;
+  nextChapter: PublicChapterDTO | null;
+}
+
 export interface TrackPixelQuestEventResult {
   accepted: true;
   duplicate: boolean;
@@ -364,6 +438,7 @@ export interface StartSessionResult {
 }
 
 export interface RecordChoiceResult {
+  duplicate: boolean;
   session: PublicSessionDTO;
   acceptedChoice: {
     chapterId: string;
@@ -414,11 +489,20 @@ export interface AdminCampaignAnalyticsResult {
     completionRate: number;
     voucherRevealRate: number;
     averageDurationMs: number | null;
+    questRetryRate: number;
+    revisitRate: number;
   };
   chapterDropOff: Array<{
     chapterOrder: number;
     arrived: number;
     advanced: number;
+    dropOffRate: number;
+  }>;
+  nodeDropOff: Array<{
+    nodeId: string;
+    nodeOrder: number;
+    arrived: number;
+    completed: number;
     dropOffRate: number;
   }>;
   consistency: {

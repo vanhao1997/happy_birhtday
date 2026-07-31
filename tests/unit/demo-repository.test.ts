@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { DemoBirthdayRepository } from "@/lib/birthday/demo-repository";
 import { createDemoData } from "@/lib/birthday/demo-data";
-import { DEFAULT_PIXEL_QUEST, toPublicChapterDTO } from "@/lib/birthday/dto";
-import type { GameEvent } from "@/lib/birthday/types";
+import { DEFAULT_PIXEL_QUEST, pixelQuestToJson, toPublicChapterDTO } from "@/lib/birthday/dto";
+import type { GameEvent, JsonObject } from "@/lib/birthday/types";
 
 const context = { ipHash: "test-ip", userAgent: "vitest" };
 
@@ -71,7 +71,7 @@ describe("demo birthday repository", () => {
     ]);
   });
 
-  it("keeps voucher hidden until all four chapters are recorded server-side", async () => {
+  it("keeps voucher hidden until all five memory nodes are confirmed server-side", async () => {
     const data = createDemoData();
     const repository = new DemoBirthdayRepository(data);
     const publicCampaign = await repository.getPublicCampaign(data.campaign.slug, context);
@@ -106,6 +106,22 @@ describe("demo birthday repository", () => {
 
       if (result.nextChapter) chapter = result.nextChapter;
     }
+
+    await expect(repository.completeSession(started.token, context)).rejects.toMatchObject({
+      code: "CONFLICT",
+      status: 409,
+    });
+
+    const finalZone = chapter.pixelQuest.zones[4]!;
+    const finalQuest = chapter.pixelQuest.quests.find((quest) => quest.nodeId === finalZone.id)!;
+    const finalProgress = await repository.recordQuestProgress(started.token, {
+      chapterId: chapter.id,
+      nodeId: finalZone.id,
+      objectiveId: finalQuest.id,
+      clientEventId: "choice-final-gate",
+      elapsedMs: 1000,
+    }, context);
+    expect(finalProgress.session.lastCheckpointNode).toBe(finalZone.id);
 
     const completed = await repository.completeSession(started.token, context);
     expect(completed.session.completedChapterCount).toBe(4);
@@ -176,14 +192,61 @@ describe("demo birthday repository", () => {
 
     expect(toPublicChapterDTO(chapter).pixelQuest).toEqual(DEFAULT_PIXEL_QUEST);
 
-    chapter.metadata.pixelQuest = {
+    chapter.metadata.pixelQuest = pixelQuestToJson({
       ...DEFAULT_PIXEL_QUEST,
       zones: DEFAULT_PIXEL_QUEST.zones.map((zone, index) => ({
         ...zone,
         npcLine: `Safe NPC ${index + 1}`,
       })),
-    };
+    });
     expect(toPublicChapterDTO(chapter).pixelQuest.zones[1].npcLine).toBe("Safe NPC 2");
+
+    chapter.metadata.pixelQuest = JSON.parse(JSON.stringify({
+      version: 2,
+      preset: "childhood-memory-atlas",
+      mapWidthPx: 1200,
+      mapHeightPx: 760,
+      noFailPath: true,
+      zones: DEFAULT_PIXEL_QUEST.zones,
+    })) as JsonObject;
+    const normalized = toPublicChapterDTO(chapter).pixelQuest;
+    expect(normalized.version).toBe(3);
+    expect(normalized.world).toMatchObject({ widthPx: 1800, heightPx: 1120, cameraZoom: 0.76 });
+    expect(normalized.quests).toHaveLength(5);
+  });
+
+  it("records quest progress idempotently and rejects future objectives", async () => {
+    const data = createDemoData();
+    const repository = new DemoBirthdayRepository(data);
+    const started = await repository.startSession({
+      campaignSlug: data.campaign.slug,
+      recipientId: data.recipients[0].id,
+      clientEventId: "progress-start",
+    }, context);
+    const firstZone = started.chapter.pixelQuest.zones[0]!;
+    const firstQuest = started.chapter.pixelQuest.quests[0]!;
+    const futureZone = started.chapter.pixelQuest.zones[1]!;
+    const futureQuest = started.chapter.pixelQuest.quests[1]!;
+
+    await expect(repository.recordQuestProgress(started.token, {
+      chapterId: started.chapter.id,
+      nodeId: futureZone.id,
+      objectiveId: futureQuest.id,
+      clientEventId: "future-progress",
+      elapsedMs: 100,
+    }, context)).rejects.toMatchObject({ code: "CONFLICT", status: 409 });
+
+    const input = {
+      chapterId: started.chapter.id,
+      nodeId: firstZone.id,
+      objectiveId: firstQuest.id,
+      clientEventId: "first-progress",
+      elapsedMs: 100,
+    };
+    expect((await repository.recordQuestProgress(started.token, input, context)).duplicate)
+      .toBe(false);
+    expect((await repository.recordQuestProgress(started.token, input, context)).duplicate)
+      .toBe(true);
   });
 
   it("records pixel quest events idempotently without advancing the chapter", async () => {
@@ -350,6 +413,16 @@ describe("demo birthday repository", () => {
       );
       if (result.nextChapter) chapter = result.nextChapter;
     }
+
+    const finalZone = chapter.pixelQuest.zones[4]!;
+    const finalQuest = chapter.pixelQuest.quests.find((quest) => quest.nodeId === finalZone.id)!;
+    await repository.recordQuestProgress(started.token, {
+      chapterId: chapter.id,
+      nodeId: finalZone.id,
+      objectiveId: finalQuest.id,
+      clientEventId: "expired-final-gate",
+      elapsedMs: null,
+    }, context);
 
     await expect(repository.completeSession(started.token, context)).rejects.toMatchObject({
       code: "CONFLICT",

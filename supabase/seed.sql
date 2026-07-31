@@ -95,21 +95,216 @@ set metadata = jsonb_build_object(
   'estimatedSeconds', 75,
   'noFailPath', true,
   'pixelQuest', jsonb_build_object(
-    'version', 2,
+    'version', 3,
     'preset', 'childhood-memory-atlas',
-    'mapWidthPx', 1200,
-    'mapHeightPx', 760,
+    'world', jsonb_build_object(
+      'preset', 'childhood-memory-atlas',
+      'widthPx', 1800,
+      'heightPx', 1120,
+      'cameraZoom', 0.76,
+      'playerRadiusPx', 22,
+      'stationRadiusPx', 112,
+      'spawnPoint', jsonb_build_object('x', 324, 'y', 888)
+    ),
     'noFailPath', true,
     'zones', jsonb_build_array(
       jsonb_build_object('id', 'childhood-home', 'title', 'Ngôi nhà tuổi thơ', 'scene', 'childhood-home', 'mapXPercent', 14, 'mapYPercent', 73, 'npcLine', 'Cánh cửa nhỏ mở ra nơi câu chuyện bắt đầu.'),
       jsonb_build_object('id', 'summer-playground', 'title', 'Sân chơi mùa hè', 'scene', 'summer-playground', 'mapXPercent', 34, 'mapYPercent', 43, 'npcLine', 'Một buổi chiều đầy nắng vẫn còn nằm giữa tiếng cười và trò chơi cũ.'),
       jsonb_build_object('id', 'old-classroom', 'title', 'Lớp học ngày xưa', 'scene', 'old-classroom', 'mapXPercent', 53, 'mapYPercent', 66, 'npcLine', 'Bàn học cũ giữ lại một điều từng khiến bạn thật tự hào.'),
       jsonb_build_object('id', 'dream-road', 'title', 'Con đường ước mơ', 'scene', 'dream-road', 'mapXPercent', 72, 'mapYPercent', 34, 'npcLine', 'Con đường uốn qua những ước mơ nhỏ từng được bạn tin là thật.'),
-      jsonb_build_object('id', 'new-age-gate', 'title', 'Cổng tuổi mới', 'scene', 'new-age-gate', 'mapXPercent', 88, 'mapYPercent', 69, 'npcLine', 'Bốn mảnh ký ức đã sáng. Cánh cổng cuối đang giữ món quà riêng của bạn.')
+      jsonb_build_object('id', 'new-age-gate', 'title', 'Cổng tuổi mới', 'scene', 'new-age-gate', 'mapXPercent', 88, 'mapYPercent', 69, 'npcLine', 'Bốn mảnh ký ức đầu đã sáng. Cánh cổng cuối đang giữ món quà riêng của bạn.')
+    ),
+    'quests', jsonb_build_array(
+      jsonb_build_object('id', 'quest-childhood-home', 'nodeId', 'childhood-home', 'type', 'collect', 'title', 'Nhặt mảnh ký ức', 'prompt', 'Tìm mảnh sáng gần căn nhà và mang nó về cánh cửa nhỏ.', 'targetLabel', 'Mảnh ký ức đầu tiên', 'completionLine', 'Cánh cửa đã nhớ ra tên bạn.'),
+      jsonb_build_object('id', 'quest-summer-playground', 'nodeId', 'summer-playground', 'type', 'talk', 'title', 'Gặp người giữ sân hè', 'prompt', 'Đến gần người dẫn đường để nghe câu chuyện mùa hè.', 'targetLabel', 'Người giữ sân hè', 'completionLine', 'Một buổi chiều cũ đã trở lại trong tiếng cười.'),
+      jsonb_build_object('id', 'quest-old-classroom', 'nodeId', 'old-classroom', 'type', 'activate', 'title', 'Bật đèn lớp học', 'prompt', 'Kích hoạt chiếc đèn nhỏ trên bàn học cũ.', 'targetLabel', 'Chiếc đèn bàn', 'completionLine', 'Trang vở cũ sáng lên bằng một điều tự hào.'),
+      jsonb_build_object('id', 'quest-dream-road', 'nodeId', 'dream-road', 'type', 'deliver', 'title', 'Đưa thư tới con đường mơ', 'prompt', 'Mang lá thư nhỏ tới cột mốc trên con đường ước mơ.', 'targetLabel', 'Lá thư ước mơ', 'completionLine', 'Những ước mơ nhỏ đã tìm đúng đường về.'),
+      jsonb_build_object('id', 'quest-new-age-gate', 'nodeId', 'new-age-gate', 'type', 'story', 'title', 'Mở cổng tuổi mới', 'prompt', 'Đặt mảnh ghép cuối vào cánh cổng để khép lại hành trình.', 'targetLabel', 'Cổng tuổi mới', 'completionLine', 'Cánh cổng mở ra món quà dành riêng cho bạn.')
+    ),
+    'npcs', jsonb_build_array(
+      jsonb_build_object('id', 'npc-childhood-home', 'nodeId', 'childhood-home', 'name', 'Người giữ ký ức', 'role', 'Người dẫn đường', 'line', 'Cánh cửa nhỏ mở ra nơi câu chuyện bắt đầu.', 'archetype', 'soldier'),
+      jsonb_build_object('id', 'npc-summer-playground', 'nodeId', 'summer-playground', 'name', 'Bạn đồng hành', 'role', 'Người kể chuyện', 'line', 'Một buổi chiều đầy nắng vẫn còn nằm giữa tiếng cười và trò chơi cũ.', 'archetype', 'guide'),
+      jsonb_build_object('id', 'npc-old-classroom', 'nodeId', 'old-classroom', 'name', 'Người giữ ký ức', 'role', 'Người dẫn đường', 'line', 'Bàn học cũ giữ lại một điều từng khiến bạn thật tự hào.', 'archetype', 'soldier'),
+      jsonb_build_object('id', 'npc-dream-road', 'nodeId', 'dream-road', 'name', 'Bạn đồng hành', 'role', 'Người kể chuyện', 'line', 'Con đường uốn qua những ước mơ nhỏ từng được bạn tin là thật.', 'archetype', 'guide'),
+      jsonb_build_object('id', 'npc-new-age-gate', 'nodeId', 'new-age-gate', 'name', 'Người giữ cổng', 'role', 'Guardian', 'line', 'Bốn mảnh ký ức đầu đã sáng. Cánh cổng cuối đang chờ bạn.', 'archetype', 'orc')
     )
   )
 )
 where campaign_id = '22222222-2222-4222-8222-222222222222';
+
+insert into public.memory_worlds (
+  workspace_id,
+  campaign_id,
+  recipient_id,
+  version,
+  preset,
+  width_px,
+  height_px,
+  zoom,
+  spawn_x,
+  spawn_y,
+  status,
+  metadata
+)
+select
+  r.workspace_id,
+  r.campaign_id,
+  r.id,
+  3,
+  'childhood-memory-atlas',
+  1800,
+  1120,
+  0.76,
+  324,
+  888,
+  'published',
+  jsonb_build_object('source', 'chapter.metadata.pixelQuest')
+from public.recipients r
+where r.campaign_id = '22222222-2222-4222-8222-222222222222'
+on conflict (campaign_id, recipient_id, version) do update set
+  status = excluded.status,
+  width_px = excluded.width_px,
+  height_px = excluded.height_px,
+  zoom = excluded.zoom,
+  spawn_x = excluded.spawn_x,
+  spawn_y = excluded.spawn_y,
+  updated_at = now();
+
+with world_config as (
+  select
+    mw.id as world_id,
+    mw.workspace_id,
+    mw.campaign_id,
+    mw.recipient_id,
+    c.metadata -> 'pixelQuest' as pixel_quest
+  from public.memory_worlds mw
+  join lateral (
+    select metadata
+    from public.chapters
+    where recipient_id = mw.recipient_id
+    order by order_index
+    limit 1
+  ) c on true
+  where mw.campaign_id = '22222222-2222-4222-8222-222222222222'
+    and mw.version = 3
+), expanded_nodes as (
+  select
+    wc.*,
+    node,
+    node_order
+  from world_config wc
+  cross join lateral jsonb_array_elements(wc.pixel_quest -> 'zones')
+    with ordinality as item(node, node_order)
+)
+insert into public.memory_nodes (
+  workspace_id,
+  campaign_id,
+  world_id,
+  chapter_id,
+  node_key,
+  kind,
+  title,
+  x_percent,
+  y_percent,
+  unlock_after,
+  metadata
+)
+select
+  expanded.workspace_id,
+  expanded.campaign_id,
+  expanded.world_id,
+  chapter.id,
+  expanded.node ->> 'id',
+  case when expanded.node_order = 5 then 'gate' else 'station' end,
+  expanded.node ->> 'title',
+  (expanded.node ->> 'mapXPercent')::numeric,
+  (expanded.node ->> 'mapYPercent')::numeric,
+  case
+    when expanded.node_order = 1 then null
+    else expanded.pixel_quest -> 'zones' -> (expanded.node_order::integer - 2) ->> 'id'
+  end,
+  jsonb_build_object(
+    'scene', expanded.node ->> 'scene',
+    'npcLine', expanded.node ->> 'npcLine'
+  )
+from expanded_nodes expanded
+left join public.chapters chapter
+  on chapter.recipient_id = expanded.recipient_id
+  and chapter.order_index = expanded.node_order
+order by expanded.recipient_id, expanded.node_order
+on conflict (world_id, node_key) do update set
+  workspace_id = excluded.workspace_id,
+  campaign_id = excluded.campaign_id,
+  chapter_id = excluded.chapter_id,
+  kind = excluded.kind,
+  title = excluded.title,
+  x_percent = excluded.x_percent,
+  y_percent = excluded.y_percent,
+  unlock_after = excluded.unlock_after,
+  metadata = excluded.metadata,
+  updated_at = now();
+
+with world_config as (
+  select
+    mw.id as world_id,
+    mw.workspace_id,
+    mw.campaign_id,
+    c.metadata -> 'pixelQuest' as pixel_quest
+  from public.memory_worlds mw
+  join lateral (
+    select metadata
+    from public.chapters
+    where recipient_id = mw.recipient_id
+    order by order_index
+    limit 1
+  ) c on true
+  where mw.campaign_id = '22222222-2222-4222-8222-222222222222'
+    and mw.version = 3
+), expanded_quests as (
+  select wc.*, quest
+  from world_config wc
+  cross join lateral jsonb_array_elements(wc.pixel_quest -> 'quests') as item(quest)
+)
+insert into public.memory_quests (
+  workspace_id,
+  campaign_id,
+  world_id,
+  node_id,
+  objective_key,
+  quest_type,
+  title,
+  prompt,
+  target_label,
+  completion_line,
+  metadata
+)
+select
+  expanded.workspace_id,
+  expanded.campaign_id,
+  expanded.world_id,
+  node.id,
+  expanded.quest ->> 'id',
+  expanded.quest ->> 'type',
+  expanded.quest ->> 'title',
+  expanded.quest ->> 'prompt',
+  expanded.quest ->> 'targetLabel',
+  expanded.quest ->> 'completionLine',
+  '{}'::jsonb
+from expanded_quests expanded
+join public.memory_nodes node
+  on node.world_id = expanded.world_id
+  and node.node_key = expanded.quest ->> 'nodeId'
+on conflict (node_id, objective_key) do update set
+  workspace_id = excluded.workspace_id,
+  campaign_id = excluded.campaign_id,
+  world_id = excluded.world_id,
+  quest_type = excluded.quest_type,
+  title = excluded.title,
+  prompt = excluded.prompt,
+  target_label = excluded.target_label,
+  completion_line = excluded.completion_line,
+  metadata = excluded.metadata,
+  updated_at = now();
 
 update public.campaigns
 set subtitle = 'Năm trạm tuổi thơ dành riêng cho đồng đội tháng 8'

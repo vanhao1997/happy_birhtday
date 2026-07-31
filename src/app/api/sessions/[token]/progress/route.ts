@@ -1,8 +1,8 @@
 import type { NextRequest } from "next/server";
 import { badRequest } from "@/lib/birthday/errors";
-import { getBirthdayRepository } from "@/lib/birthday/repository";
 import { errorResponse, jsonResponse, readJsonObject, requestContext } from "@/lib/birthday/http";
-import { parseRecordChoice } from "@/lib/birthday/validation";
+import { getBirthdayRepository } from "@/lib/birthday/repository";
+import { parseQuestProgress } from "@/lib/birthday/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,10 +18,9 @@ export async function POST(
     }
 
     const body = await readJsonObject(request);
-    const repository = getBirthdayRepository();
-    const result = await repository.recordChoice(
+    const result = await getBirthdayRepository().recordQuestProgress(
       token,
-      parseRecordChoice(body),
+      parseQuestProgress(body),
       requestContext(request),
     );
 

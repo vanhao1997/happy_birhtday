@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parsePixelQuestEvent,
+  parseQuestProgress,
   parseRecipientInput,
   parseStartSession,
 } from "@/lib/birthday/validation";
@@ -28,7 +29,7 @@ describe("public and admin input validation", () => {
     ).toMatchObject({ campaignSlug: "thang-8-ruc-ro" });
   });
 
-  it("accepts only the three pixel quest event names", () => {
+  it("accepts allowlisted Story RPG events and rejects voucher forgery", () => {
     expect(parsePixelQuestEvent({
       eventName: "pixel_quest_checkpoint",
       chapterId: "44444444-0001-4001-8001-000000000001",
@@ -37,12 +38,37 @@ describe("public and admin input validation", () => {
       moveCount: 5,
     })).toMatchObject({ checkpointId: "childhood-home", moveCount: 5 });
 
+    expect(parsePixelQuestEvent({
+      eventName: "npc_dialog_opened",
+      chapterId: "44444444-0001-4001-8001-000000000001",
+      checkpointId: "childhood-home",
+      clientEventId: "npc-opened-1",
+      moveCount: 5,
+    })).toMatchObject({ eventName: "npc_dialog_opened", checkpointId: "childhood-home" });
+
     expect(() => parsePixelQuestEvent({
       eventName: "voucher_revealed",
       chapterId: "44444444-0001-4001-8001-000000000001",
       checkpointId: null,
       clientEventId: "forged-event",
     })).toThrow(/not an allowed pixel quest event/);
+  });
+
+  it("validates typed quest progress input", () => {
+    expect(parseQuestProgress({
+      chapterId: "44444444-0001-4001-8001-000000000001",
+      nodeId: "childhood-home",
+      objectiveId: "quest-childhood-home",
+      clientEventId: "progress-1",
+      elapsedMs: 1200,
+    })).toMatchObject({ nodeId: "childhood-home", elapsedMs: 1200 });
+
+    expect(() => parseQuestProgress({
+      chapterId: "44444444-0001-4001-8001-000000000001",
+      nodeId: "../../voucher",
+      objectiveId: "quest-childhood-home",
+      clientEventId: "progress-2",
+    })).toThrow(/lowercase slugs/);
   });
 
   it("requires exactly four chapters for each recipient", () => {

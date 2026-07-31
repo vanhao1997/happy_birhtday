@@ -19,7 +19,17 @@ export type AnalyticsSession = Pick<
   | "voucherRevealedAt"
   | "lastSeenAt"
 >;
-export type AnalyticsEvent = Pick<GameEvent, "eventName" | "sessionId">;
+export type AnalyticsEvent = Pick<GameEvent, "eventName" | "sessionId"> & {
+  payload?: GameEvent["payload"];
+};
+
+const MEMORY_NODE_IDS = [
+  "childhood-home",
+  "summer-playground",
+  "old-classroom",
+  "dream-road",
+  "new-age-gate",
+] as const;
 
 export function buildCampaignAnalytics(input: {
   campaignId: string;
@@ -91,6 +101,47 @@ export function buildCampaignAnalytics(input: {
   ).size;
   const sessionStartedEvents = uniqueEventSessions("session_started");
   const voucherRevealEvents = uniqueEventSessions("voucher_revealed");
+  const eventNodeId = (event: AnalyticsEvent) => {
+    const value = event.payload?.nodeId ?? event.payload?.checkpointId;
+    return typeof value === "string" ? value : null;
+  };
+  const eventPairs = (eventName: string) => input.events.filter(
+    (event) => event.eventName === eventName && event.sessionId && eventNodeId(event),
+  );
+  const uniquePairCount = (events: AnalyticsEvent[]) => new Set(
+    events.map((event) => `${event.sessionId}:${eventNodeId(event)}`),
+  ).size;
+  const questStarts = eventPairs("quest_started");
+  const memoryReveals = eventPairs("memory_revealed");
+  const questRetryRate = questStarts.length > 0
+    ? Math.max(0, questStarts.length - uniquePairCount(questStarts)) / questStarts.length
+    : 0;
+  const revisitRate = memoryReveals.length > 0
+    ? Math.max(0, memoryReveals.length - uniquePairCount(memoryReveals)) / memoryReveals.length
+    : 0;
+  const nodeDropOff = MEMORY_NODE_IDS.map((nodeId, index) => {
+    const arrived = new Set(input.events
+      .filter((event) => (
+        (event.eventName === "checkpoint_reached" || event.eventName === "quest_started")
+        && event.sessionId
+        && eventNodeId(event) === nodeId
+      ))
+      .map((event) => event.sessionId as string)).size;
+    const completed = new Set(input.events
+      .filter((event) => (
+        event.eventName === "quest_objective_completed"
+        && event.sessionId
+        && eventNodeId(event) === nodeId
+      ))
+      .map((event) => event.sessionId as string)).size;
+    return {
+      nodeId,
+      nodeOrder: index + 1,
+      arrived,
+      completed,
+      dropOffRate: arrived > 0 ? Math.max(0, arrived - completed) / arrived : 0,
+    };
+  });
 
   return {
     campaignId: input.campaignId,
@@ -111,8 +162,11 @@ export function buildCampaignAnalytics(input: {
         ? vouchersRevealed.length / sessionsCompleted.length
         : 0,
       averageDurationMs,
+      questRetryRate,
+      revisitRate,
     },
     chapterDropOff,
+    nodeDropOff,
     consistency: {
       sessionStartedEvents,
       voucherRevealEvents,

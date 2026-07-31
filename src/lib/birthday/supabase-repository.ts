@@ -40,6 +40,8 @@ import {
   type RecipientStatus,
   type RecordChoiceInput,
   type RecordChoiceResult,
+  type RecordQuestProgressInput,
+  type RecordQuestProgressResult,
   type RequestContext,
   type SessionStatus,
   type StartSessionInput,
@@ -115,6 +117,12 @@ interface ChoiceRow {
   created_at: string;
 }
 
+interface RecordChoiceProgressRpcRow {
+  choice_id: string;
+  choice_key: string;
+  inserted: boolean;
+}
+
 interface GameSessionRow {
   id: string;
   workspace_id: string;
@@ -128,6 +136,9 @@ interface GameSessionRow {
   completed_at: string | null;
   voucher_revealed_at: string | null;
   last_seen_at: string;
+  world_version: number;
+  last_checkpoint_node: string | null;
+  state_version: number;
   metadata: JsonObject | null;
 }
 
@@ -176,6 +187,33 @@ interface GameEventRow {
   payload: JsonObject | null;
   request_ip_hash: string | null;
   user_agent: string | null;
+}
+
+interface MemoryWorldRow {
+  id: string;
+  workspace_id: string;
+  campaign_id: string;
+  recipient_id: string;
+  version: number;
+}
+
+interface MemoryNodeRow {
+  id: string;
+  world_id: string;
+  node_key: string;
+}
+
+interface MemoryQuestRow {
+  id: string;
+  node_id: string;
+  objective_key: string;
+}
+
+interface GameSessionProgressRow {
+  id: string;
+  session_id: string;
+  node_id: string;
+  quest_id: string;
 }
 
 export class SupabaseBirthdayRepository implements BirthdayRepository {
@@ -254,6 +292,8 @@ export class SupabaseBirthdayRepository implements BirthdayRepository {
             completed_chapters: 0,
             started_at: timestamp,
             last_seen_at: timestamp,
+            world_version: 3,
+            state_version: 1,
             metadata: {},
           },
         ],
@@ -300,6 +340,7 @@ export class SupabaseBirthdayRepository implements BirthdayRepository {
     if (existingChoice) {
       const nextChapter = await this.nextChapter(session);
       return {
+        duplicate: true,
         session: toPublicSessionDTO(session),
         acceptedChoice: {
           chapterId: existingChoice.chapterId,
@@ -323,73 +364,191 @@ export class SupabaseBirthdayRepository implements BirthdayRepository {
       throw conflict("choiceKey is not valid for this chapter");
     }
 
-    const [choiceRow] = await this.client.table<ChoiceRow>("choices", [select("*")], {
-      method: "POST",
-      body: [
-        {
-          workspace_id: session.workspaceId,
-          campaign_id: session.campaignId,
-          recipient_id: session.recipientId,
-          session_id: session.id,
-          chapter_id: chapter.id,
-          choice_key: input.choiceKey,
-          answer_text: input.answerText,
-          client_event_id: input.clientEventId,
-          elapsed_ms: input.elapsedMs,
-          metadata: {},
-        },
-      ],
-      prefer: "return=representation",
-    });
+    const [recordedChoice] = await this.client.rpc<RecordChoiceProgressRpcRow[]>(
+      "record_birthday_choice_progress",
+      {
+        p_workspace_id: session.workspaceId,
+        p_campaign_id: session.campaignId,
+        p_recipient_id: session.recipientId,
+        p_session_id: session.id,
+        p_chapter_id: chapter.id,
+        p_choice_key: input.choiceKey,
+        p_answer_text: input.answerText,
+        p_client_event_id: input.clientEventId,
+        p_elapsed_ms: input.elapsedMs,
+      },
+    );
 
-    if (!choiceRow) {
+    if (!recordedChoice) {
       throw conflict("Unable to record choice");
     }
 
-    const completedChapters = Math.max(session.completedChapters, chapter.orderIndex);
-    const timestamp = nowIso();
-    const nextStatus: SessionStatus =
-      completedChapters >= REQUIRED_CHAPTER_COUNT ? "completed" : "active";
     const [updatedSessionRow] = await this.client.table<GameSessionRow>(
+      "game_sessions",
+      [select("*"), eq("id", session.id), eq("workspace_id", session.workspaceId), limit(1)],
+    );
+
+    if (!updatedSessionRow) {
+      throw conflict("Unable to refresh session after recording choice");
+    }
+    const updatedSession = mapSession(updatedSessionRow);
+    const acceptedChoiceKey = recordedChoice.choice_key;
+
+    if (recordedChoice.inserted) {
+      await this.trackEvent("choice_recorded", {
+        workspaceId: session.workspaceId,
+        campaignId: session.campaignId,
+        recipientId: session.recipientId,
+        sessionId: session.id,
+        chapterId: chapter.id,
+        clientEventId: input.clientEventId,
+        context,
+        payload: { choiceKey: acceptedChoiceKey, elapsedMs: input.elapsedMs },
+      });
+    }
+
+    const nextChapter = await this.nextChapter(updatedSession);
+
+    return {
+      duplicate: !recordedChoice.inserted,
+      session: toPublicSessionDTO(updatedSession),
+      acceptedChoice: {
+        chapterId: chapter.id,
+        choiceKey: acceptedChoiceKey,
+        response: chapter.options.find((option) => option.key === acceptedChoiceKey)?.response ?? null,
+      },
+      nextChapter: nextChapter ? toPublicChapterDTO(nextChapter) : null,
+      completed: updatedSession.completedChapters >= REQUIRED_CHAPTER_COUNT,
+    };
+  }
+
+  async recordQuestProgress(
+    token: string,
+    input: RecordQuestProgressInput,
+    context: RequestContext,
+  ): Promise<RecordQuestProgressResult> {
+    const session = await this.findSessionByToken(token);
+    const chapter = await this.findChapter(input.chapterId, session);
+    const publicChapter = toPublicChapterDTO(chapter);
+    const quest = publicChapter.pixelQuest.quests.find(
+      (candidate) => candidate.nodeId === input.nodeId && candidate.id === input.objectiveId,
+    );
+    const expectedNode = publicChapter.pixelQuest.zones[chapter.orderIndex - 1];
+    const finalNode = publicChapter.pixelQuest.zones[REQUIRED_CHAPTER_COUNT];
+    const isFinalGate = chapter.orderIndex === REQUIRED_CHAPTER_COUNT
+      && session.completedChapters >= REQUIRED_CHAPTER_COUNT
+      && finalNode?.id === input.nodeId
+      && quest?.nodeId === finalNode.id;
+
+    if (!quest || (!isFinalGate && (!expectedNode || expectedNode.id !== input.nodeId))) {
+      throw conflict("Quest objective is not active for this session");
+    }
+
+    if (isFinalGate) {
+      const duplicate = session.lastCheckpointNode === finalNode.id;
+      let confirmedSession = session;
+      if (!duplicate) {
+        await this.persistMemoryProgress(session, chapter, input);
+        const [row] = await this.client.table<GameSessionRow>(
+          "game_sessions",
+          [select("*"), eq("id", session.id), eq("workspace_id", session.workspaceId)],
+          {
+            method: "PATCH",
+            body: {
+              last_checkpoint_node: finalNode.id,
+              state_version: session.stateVersion + 1,
+              last_seen_at: nowIso(),
+            },
+            prefer: "return=representation",
+          },
+        );
+        if (row) confirmedSession = mapSession(row);
+        await this.trackEvent("quest_objective_completed", {
+          workspaceId: session.workspaceId,
+          campaignId: session.campaignId,
+          recipientId: session.recipientId,
+          sessionId: session.id,
+          chapterId: chapter.id,
+          clientEventId: input.clientEventId,
+          context,
+          payload: { nodeId: input.nodeId, objectiveId: input.objectiveId, elapsedMs: input.elapsedMs },
+        });
+      } else {
+        await this.persistMemoryProgress(session, chapter, input);
+      }
+
+      return {
+        accepted: true,
+        duplicate,
+        completed: true,
+        response: quest.completionLine,
+        session: toPublicSessionDTO(confirmedSession),
+        nextChapter: null,
+      };
+    }
+
+    if (chapter.orderIndex <= session.completedChapters) {
+      await this.persistMemoryProgress(session, chapter, input);
+      const nextChapter = await this.nextChapter(session);
+      return {
+        accepted: true,
+        duplicate: true,
+        completed: session.completedChapters >= REQUIRED_CHAPTER_COUNT,
+        response: chapter.options[0]?.response ?? null,
+        session: toPublicSessionDTO(session),
+        nextChapter: nextChapter ? toPublicChapterDTO(nextChapter) : null,
+      };
+    }
+
+    if (session.status !== "active") {
+      throw conflict("Session is already completed");
+    }
+    if (chapter.orderIndex !== session.currentChapterOrder) {
+      throw conflict("Quest objective is not active for this session");
+    }
+
+    const result = await this.recordChoice(token, {
+      chapterId: chapter.id,
+      choiceKey: chapter.options[0]?.key ?? "station-complete",
+      answerText: `Quest complete: ${quest.id}`,
+      clientEventId: input.clientEventId,
+      elapsedMs: input.elapsedMs,
+    }, context);
+
+    await this.persistMemoryProgress(session, chapter, input);
+
+    const [checkpointRow] = await this.client.table<GameSessionRow>(
       "game_sessions",
       [select("*"), eq("id", session.id), eq("workspace_id", session.workspaceId)],
       {
         method: "PATCH",
         body: {
-          completed_chapters: completedChapters,
-          current_chapter_order: completedChapters + 1,
-          status: nextStatus,
-          completed_at: nextStatus === "completed" ? timestamp : session.completedAt,
-          last_seen_at: timestamp,
+          last_checkpoint_node: input.nodeId,
+          state_version: session.stateVersion + 1,
+          last_seen_at: nowIso(),
         },
         prefer: "return=representation",
       },
     );
 
-    const updatedSession = updatedSessionRow ? mapSession(updatedSessionRow) : session;
-
-    await this.trackEvent("choice_recorded", {
+    await this.trackEvent("quest_objective_completed", {
       workspaceId: session.workspaceId,
       campaignId: session.campaignId,
       recipientId: session.recipientId,
       sessionId: session.id,
       chapterId: chapter.id,
-      clientEventId: input.clientEventId,
+      clientEventId: `quest:${input.clientEventId}`.slice(0, 128),
       context,
-      payload: { choiceKey: input.choiceKey, elapsedMs: input.elapsedMs },
+      payload: { nodeId: input.nodeId, objectiveId: input.objectiveId, elapsedMs: input.elapsedMs },
     });
 
-    const nextChapter = await this.nextChapter(updatedSession);
-
     return {
-      session: toPublicSessionDTO(updatedSession),
-      acceptedChoice: {
-        chapterId: chapter.id,
-        choiceKey: input.choiceKey,
-        response: selectedOption.response ?? null,
-      },
-      nextChapter: nextChapter ? toPublicChapterDTO(nextChapter) : null,
-      completed: updatedSession.completedChapters >= REQUIRED_CHAPTER_COUNT,
+      accepted: true,
+      duplicate: result.duplicate,
+      completed: result.completed,
+      response: result.acceptedChoice.response,
+      session: checkpointRow ? toPublicSessionDTO(mapSession(checkpointRow)) : result.session,
+      nextChapter: result.nextChapter,
     };
   }
 
@@ -400,6 +559,16 @@ export class SupabaseBirthdayRepository implements BirthdayRepository {
         completedChapters: session.completedChapters,
         requiredChapters: REQUIRED_CHAPTER_COUNT,
       });
+    }
+
+    const finalChapter = await this.chapterForOrder(
+      session.campaignId,
+      session.recipientId,
+      REQUIRED_CHAPTER_COUNT,
+    );
+    const finalNode = toPublicChapterDTO(finalChapter).pixelQuest.zones[REQUIRED_CHAPTER_COUNT];
+    if (!finalNode || session.lastCheckpointNode !== finalNode.id) {
+      throw conflict("Final memory gate has not been confirmed by the server");
     }
 
     const voucher = await this.voucherForRecipient(
@@ -589,6 +758,7 @@ export class SupabaseBirthdayRepository implements BirthdayRepository {
       events: eventRows.map((event) => ({
         eventName: event.event_name,
         sessionId: event.session_id,
+        payload: event.payload ?? {},
       })),
     });
   }
@@ -1089,6 +1259,135 @@ export class SupabaseBirthdayRepository implements BirthdayRepository {
     }
   }
 
+  private async persistMemoryProgress(
+    session: GameSession,
+    chapter: Chapter,
+    input: RecordQuestProgressInput,
+  ): Promise<void> {
+    const config = toPublicChapterDTO(chapter).pixelQuest;
+    let [world] = await this.client.table<MemoryWorldRow>("memory_worlds", [
+      select("*"),
+      eq("workspace_id", session.workspaceId),
+      eq("campaign_id", session.campaignId),
+      eq("recipient_id", session.recipientId),
+      eq("version", session.worldVersion),
+      limit(1),
+    ]);
+
+    if (!world) {
+      [world] = await this.client.table<MemoryWorldRow>("memory_worlds", [
+        select("*"),
+        ["on_conflict", "campaign_id,recipient_id,version"],
+      ], {
+        method: "POST",
+        body: [{
+          workspace_id: session.workspaceId,
+          campaign_id: session.campaignId,
+          recipient_id: session.recipientId,
+          version: session.worldVersion,
+          preset: config.world.preset,
+          width_px: config.world.widthPx,
+          height_px: config.world.heightPx,
+          zoom: config.world.cameraZoom,
+          spawn_x: config.world.spawnPoint.x,
+          spawn_y: config.world.spawnPoint.y,
+          status: "published",
+          metadata: { source: "chapter.metadata.pixelQuest" },
+        }],
+        prefer: "resolution=merge-duplicates,return=representation",
+      });
+    }
+    if (!world) throw conflict("Unable to persist memory world progress");
+
+    const zoneIndex = config.zones.findIndex((zone) => zone.id === input.nodeId);
+    const zone = config.zones[zoneIndex];
+    const quest = config.quests.find((candidate) => candidate.id === input.objectiveId);
+    if (!zone || !quest) throw conflict("Memory node is not present in world config");
+
+    let [node] = await this.client.table<MemoryNodeRow>("memory_nodes", [
+      select("*"),
+      eq("world_id", world.id),
+      eq("node_key", zone.id),
+      limit(1),
+    ]);
+    if (!node) {
+      [node] = await this.client.table<MemoryNodeRow>("memory_nodes", [
+        select("*"),
+        ["on_conflict", "world_id,node_key"],
+      ], {
+        method: "POST",
+        body: [{
+          workspace_id: session.workspaceId,
+          campaign_id: session.campaignId,
+          world_id: world.id,
+          chapter_id: zoneIndex < REQUIRED_CHAPTER_COUNT ? chapter.id : null,
+          node_key: zone.id,
+          kind: zoneIndex === config.zones.length - 1 ? "gate" : "station",
+          title: zone.title,
+          x_percent: zone.mapXPercent,
+          y_percent: zone.mapYPercent,
+          unlock_after: zoneIndex > 0 ? config.zones[zoneIndex - 1]?.id ?? null : null,
+          metadata: { scene: zone.scene, npcLine: zone.npcLine },
+        }],
+        prefer: "resolution=merge-duplicates,return=representation",
+      });
+    }
+    if (!node) throw conflict("Unable to persist memory node progress");
+
+    let [questRow] = await this.client.table<MemoryQuestRow>("memory_quests", [
+      select("*"),
+      eq("node_id", node.id),
+      eq("objective_key", quest.id),
+      limit(1),
+    ]);
+    if (!questRow) {
+      [questRow] = await this.client.table<MemoryQuestRow>("memory_quests", [
+        select("*"),
+        ["on_conflict", "node_id,objective_key"],
+      ], {
+        method: "POST",
+        body: [{
+          workspace_id: session.workspaceId,
+          campaign_id: session.campaignId,
+          world_id: world.id,
+          node_id: node.id,
+          objective_key: quest.id,
+          quest_type: quest.type,
+          title: quest.title,
+          prompt: quest.prompt,
+          target_label: quest.targetLabel,
+          completion_line: quest.completionLine,
+          metadata: {},
+        }],
+        prefer: "resolution=merge-duplicates,return=representation",
+      });
+    }
+    if (!questRow) throw conflict("Unable to persist memory quest progress");
+
+    await this.client.table<GameSessionProgressRow>(
+      "game_session_progress",
+      [select("*"), ["on_conflict", "session_id,node_id,quest_id"]],
+      {
+        method: "POST",
+        body: [{
+          workspace_id: session.workspaceId,
+          campaign_id: session.campaignId,
+          recipient_id: session.recipientId,
+          session_id: session.id,
+          world_id: world.id,
+          node_id: node.id,
+          quest_id: questRow.id,
+          status: "completed",
+          client_event_id: input.clientEventId,
+          elapsed_ms: input.elapsedMs,
+          payload: { nodeId: input.nodeId, objectiveId: input.objectiveId },
+          completed_at: nowIso(),
+        }],
+        prefer: "resolution=ignore-duplicates,return=representation",
+      },
+    );
+  }
+
   private async audit(
     auth: AdminIdentity,
     action: string,
@@ -1203,6 +1502,9 @@ function mapSession(row: GameSessionRow): GameSession {
     completedAt: row.completed_at,
     voucherRevealedAt: row.voucher_revealed_at,
     lastSeenAt: row.last_seen_at,
+    worldVersion: row.world_version ?? 3,
+    lastCheckpointNode: row.last_checkpoint_node ?? null,
+    stateVersion: row.state_version ?? 1,
     metadata: row.metadata ?? {},
   };
 }
