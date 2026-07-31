@@ -12,7 +12,7 @@ import {
   useState,
 } from "react";
 import Image from "next/image";
-import { Check, CircleHelp, Loader2, LockKeyhole, MapPin, Pause, Play, RotateCcw, X } from "lucide-react";
+import { Check, CircleHelp, Compass, Loader2, LockKeyhole, MapPin, Pause, Play, RotateCcw, Sparkles, X } from "lucide-react";
 import { DEFAULT_PIXEL_QUEST } from "@/lib/birthday/dto";
 import type {
   PixelCharacterArchetype,
@@ -34,6 +34,7 @@ import { MapArtwork, RoyalPixelCharacter } from "./ChildhoodMemoryMap";
 import {
   calculateCamera,
   isGamePoint,
+  latestHeldDirection,
   MEMORY_WORLD,
   movePlayer,
   nearestZoneIndex,
@@ -142,12 +143,15 @@ export function ChildhoodMemoryMapGame({
   const [tutorialOpen, setTutorialOpen] = useState(true);
   const [pauseOpen, setPauseOpen] = useState(false);
   const [sceneIndex, setSceneIndex] = useState<number | null>(null);
+  const [discoveryMessage, setDiscoveryMessage] = useState("");
   const mapRef = useRef<HTMLDivElement | null>(null);
   const sceneCloseRef = useRef<HTMLButtonElement | null>(null);
   const heldDirectionsRef = useRef<Set<GameDirection>>(new Set());
   const activeDirectionRef = useRef<GameDirection>("down");
   const playerPositionRef = useRef(playerPosition);
   const moveCountRef = useRef(0);
+  const previousNearbyRef = useRef(-2);
+  const discoveryTimeoutRef = useRef<number | null>(null);
 
   const questReducerDispatch = (action: Parameters<typeof pixelQuestReducer>[1]) => {
     dispatchQuest((current) => pixelQuestReducer(current, action));
@@ -161,6 +165,8 @@ export function ChildhoodMemoryMapGame({
   const nearbyZone = nearbyIndex >= 0 ? pixelQuest.zones[nearbyIndex] : null;
   const nearbyEnabled = nearbyIndex >= 0 && isMemoryStationEnabled(nearbyIndex, completedChapterCount, pixelQuest.zones.length);
   const visitedCount = pixelQuest.zones.filter((_, index) => isMemoryStationVisited(index, completedChapterCount, voucherRevealed)).length;
+  const nextObjectiveIndex = Math.min(completedChapterCount, pixelQuest.zones.length - 1);
+  const objectiveZone = pixelQuest.zones[nextObjectiveIndex] ?? firstZone;
   const camera = useMemo(() => calculateCamera(playerPosition, viewport), [playerPosition, viewport]);
   const worldStyle = {
     width: `${MEMORY_WORLD.width}px`,
@@ -258,6 +264,31 @@ export function ChildhoodMemoryMapGame({
   }, []);
 
   useEffect(() => {
+    const previousNearby = previousNearbyRef.current;
+    if (nearbyIndex >= 0 && nearbyIndex !== previousNearby && nearbyZone) {
+      setDiscoveryMessage(
+        nearbyEnabled
+          ? `${nearbyZone.title} · nhấn Enter để mở`
+          : `${nearbyZone.title} · trạm đang khóa`,
+      );
+      if (discoveryTimeoutRef.current !== null) {
+        window.clearTimeout(discoveryTimeoutRef.current);
+      }
+      discoveryTimeoutRef.current = window.setTimeout(() => {
+        setDiscoveryMessage("");
+        discoveryTimeoutRef.current = null;
+      }, 2600);
+    }
+    previousNearbyRef.current = nearbyIndex;
+  }, [nearbyEnabled, nearbyIndex, nearbyZone]);
+
+  useEffect(() => () => {
+    if (discoveryTimeoutRef.current !== null) {
+      window.clearTimeout(discoveryTimeoutRef.current);
+    }
+  }, []);
+
+  useEffect(() => {
     let frame = 0;
     let previous = performance.now();
     const tick = (now: number) => {
@@ -265,7 +296,8 @@ export function ChildhoodMemoryMapGame({
       previous = now;
       const shouldMove = !pauseOpen && !tutorialOpen && sceneIndex === null && heldDirectionsRef.current.size > 0;
       if (shouldMove) {
-        const direction = activeDirectionRef.current;
+        const direction = latestHeldDirection(heldDirectionsRef.current, activeDirectionRef.current);
+        activeDirectionRef.current = direction;
         const next = movePlayer(playerPositionRef.current, direction, MEMORY_WORLD.speed * deltaSeconds);
         if (next.x !== playerPositionRef.current.x || next.y !== playerPositionRef.current.y) {
           playerPositionRef.current = next;
@@ -301,6 +333,11 @@ export function ChildhoodMemoryMapGame({
       heldDirectionsRef.current.add(direction);
     } else {
       heldDirectionsRef.current.delete(direction);
+      if (heldDirectionsRef.current.size > 0) {
+        const nextDirection = latestHeldDirection(heldDirectionsRef.current, activeDirectionRef.current);
+        activeDirectionRef.current = nextDirection;
+        setPlayerDirection(nextDirection);
+      }
     }
   }
 
@@ -310,6 +347,7 @@ export function ChildhoodMemoryMapGame({
     const nextMoveCount = moveCountRef.current + (zone.id === questState.activeCheckpointId ? 0 : 1);
     moveCountRef.current = nextMoveCount;
     questReducerDispatch({ type: "select", checkpointId: zone.id, completedChapterCount, config: pixelQuest });
+    setDiscoveryMessage("");
     if (!shouldOpen) return;
     setSceneIndex(index);
     setPauseOpen(false);
@@ -335,9 +373,24 @@ export function ChildhoodMemoryMapGame({
     selectStation(nearbyIndex, true);
   }
 
+  function resetToActiveStation() {
+    const target = playerStartPoint(activeZone);
+    playerPositionRef.current = target;
+    setPlayerPosition(target);
+    activeDirectionRef.current = "down";
+    setPlayerDirection("down");
+    setDiscoveryMessage("");
+    setPauseOpen(false);
+    mapRef.current?.focus({ preventScroll: true });
+  }
+
   function handleMapKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {
       event.preventDefault();
+      if (sceneIndex !== null) {
+        setSceneIndex(null);
+        return;
+      }
       setPauseOpen((current) => !current);
       heldDirectionsRef.current.clear();
       return;
@@ -368,6 +421,10 @@ export function ChildhoodMemoryMapGame({
 
   const sceneImage = sceneIndex === null ? null : frames[sceneIndex];
   const sceneZone = sceneIndex === null ? null : pixelQuest.zones[sceneIndex];
+  const playerMiniMapStyle = {
+    left: `${(playerPosition.x / MEMORY_WORLD.width) * 100}%`,
+    top: `${(playerPosition.y / MEMORY_WORLD.height) * 100}%`,
+  } as CSSProperties;
 
   return (
     <section className="childhood-map" aria-labelledby="childhood-map-title" data-complete={voucherRevealed}>
@@ -458,6 +515,37 @@ export function ChildhoodMemoryMapGame({
           </button>
         </div>
 
+        <div className="childhood-map__objective" role="status" aria-live="polite">
+          <span><Compass size={13} aria-hidden="true" /> MỤC TIÊU</span>
+          <strong>{voucherRevealed ? "Hành trình đã hoàn tất" : nearbyZone && nearbyEnabled ? `Đang ở ${nearbyZone.title}` : `Đi tới ${objectiveZone.title}`}</strong>
+          <small>{voucherRevealed ? "Năm mảnh ký ức đã trở về đúng chỗ." : `${visitedCount}/5 mảnh ký ức đã được giữ lại`}</small>
+        </div>
+
+        <div className="childhood-map__minimap" role="img" aria-label={`Minimap: nhân vật đang ở ${Math.round((playerPosition.x / MEMORY_WORLD.width) * 100)} phần trăm chiều ngang bản đồ`}>
+          <div className="childhood-map__minimap-world">
+            <span className="childhood-map__minimap-route" aria-hidden="true" />
+            {pixelQuest.zones.map((zone, index) => (
+              <span
+                key={zone.id}
+                className="childhood-map__minimap-station"
+                data-enabled={isMemoryStationEnabled(index, completedChapterCount, pixelQuest.zones.length)}
+                data-visited={isMemoryStationVisited(index, completedChapterCount, voucherRevealed)}
+                style={{ left: `${zone.mapXPercent}%`, top: `${zone.mapYPercent}%` }}
+                aria-hidden="true"
+              />
+            ))}
+            <span className="childhood-map__minimap-player" style={playerMiniMapStyle} aria-hidden="true" />
+          </div>
+          <span className="childhood-map__minimap-label">MINIMAP</span>
+        </div>
+
+        {discoveryMessage ? (
+          <div className="childhood-map__discovery" role="status" aria-live="polite">
+            <Sparkles size={15} aria-hidden="true" />
+            <span>{discoveryMessage}</span>
+          </div>
+        ) : null}
+
         {nearbyZone ? (
           <div className="childhood-map__proximity" data-visible="true" data-locked={!nearbyEnabled} role="status" aria-live="polite">
             <span>{nearbyEnabled ? "ENTER" : "LOCK"}</span>
@@ -478,7 +566,11 @@ export function ChildhoodMemoryMapGame({
             <div className="childhood-map__pause-card">
               <span className="childhood-map__story-heading"><span>TẠM DỪNG</span><strong id="memory-map-pause-title">Đứng lại một chút</strong></span>
               <p>Vị trí và những mảnh ký ức đã mở được giữ lại trên thiết bị này.</p>
-              <button type="button" className="childhood-map__interact" onClick={() => setPauseOpen(false)}><Play size={16} aria-hidden="true" /> Tiếp tục</button>
+              <div className="childhood-map__pause-actions">
+                <button type="button" className="childhood-map__interact" onClick={() => setPauseOpen(false)}><Play size={16} aria-hidden="true" /> Tiếp tục</button>
+                <button type="button" className="childhood-map__pause-secondary" onClick={() => { setPauseOpen(false); setTutorialOpen(true); }}><CircleHelp size={16} aria-hidden="true" /> Xem hướng dẫn</button>
+                <button type="button" className="childhood-map__pause-secondary" onClick={resetToActiveStation}><RotateCcw size={16} aria-hidden="true" /> Về trạm hiện tại</button>
+              </div>
             </div>
           </div>
         ) : null}

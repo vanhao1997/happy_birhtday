@@ -44,6 +44,8 @@ describe("childhood memory map", () => {
 
     expect(screen.getByText("Memory Atlas 2000 · 5 trạm")).toBeInTheDocument();
     expect(screen.getAllByRole("listitem")).toHaveLength(5);
+    expect(screen.getByRole("img", { name: /Minimap/ })).toBeInTheDocument();
+    expect(document.querySelector(".childhood-map__objective")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Ngôi nhà tuổi thơ/ })).toBeEnabled();
     expect(screen.getByRole("button", { name: /Sân chơi mùa hè/ })).toBeDisabled();
     expect(document.querySelector(".prompt-line")).not.toBeInTheDocument();
@@ -107,6 +109,16 @@ describe("childhood memory map", () => {
     fireEvent.click(screen.getByRole("button", { name: "Tiếp tục" }));
     fireEvent.keyDown(map, { key: "ArrowRight" });
     expect(character?.style.getPropertyValue("--character-x")).not.toBe(start);
+  });
+
+  it("offers in-game pause actions without clearing memory progress", () => {
+    renderMap(1);
+    fireEvent.click(screen.getByRole("button", { name: "Tạm dừng hành trình" }));
+
+    expect(screen.getByRole("button", { name: /Về trạm hiện tại/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Xem hướng dẫn/ }));
+    expect(screen.getByRole("note")).toBeInTheDocument();
+    expect(window.localStorage.getItem("happybirthday.memoryMap.session-mai")).not.toContain("voucher");
   });
 
   it("opens the fifth station only after four server chapters", () => {

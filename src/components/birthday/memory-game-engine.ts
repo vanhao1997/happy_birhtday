@@ -28,6 +28,18 @@ export const MEMORY_WORLD = {
   speed: 230,
 } as const;
 
+/** Keeps keyboard and touch movement deterministic when several directions are held. */
+export function latestHeldDirection(
+  heldDirections: ReadonlySet<GameDirection>,
+  fallback: GameDirection,
+): GameDirection {
+  let latest = fallback;
+  heldDirections.forEach((direction) => {
+    latest = direction;
+  });
+  return latest;
+}
+
 // Landmarks are solid enough to make the map feel like a world, while the
 // road and bridge stay open so every memory station remains reachable.
 export const MEMORY_COLLISION_RECTS: CollisionRect[] = [

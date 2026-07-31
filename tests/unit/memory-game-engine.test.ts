@@ -3,6 +3,7 @@ import { DEFAULT_PIXEL_QUEST } from "@/lib/birthday/dto";
 import {
   calculateCamera,
   isBlocked,
+  latestHeldDirection,
   MEMORY_COLLISION_RECTS,
   MEMORY_WORLD,
   movePlayer,
@@ -12,6 +13,15 @@ import {
 } from "@/components/birthday/memory-game-engine";
 
 describe("memory game engine", () => {
+  it("keeps the most recently pressed direction when keys overlap", () => {
+    const held = new Set(["right", "down"] as const);
+    expect(latestHeldDirection(held, "left")).toBe("down");
+    held.delete("down");
+    expect(latestHeldDirection(held, "left")).toBe("right");
+    held.clear();
+    expect(latestHeldDirection(held, "left")).toBe("left");
+  });
+
   it("converts public zone percentages into the large pixel world", () => {
     const point = zoneToWorldPoint(DEFAULT_PIXEL_QUEST.zones[0]!);
     expect(point.x).toBeCloseTo(252);
