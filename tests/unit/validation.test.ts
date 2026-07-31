@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { parseRecipientInput, parseStartSession } from "@/lib/birthday/validation";
+import {
+  parsePixelQuestEvent,
+  parseRecipientInput,
+  parseStartSession,
+} from "@/lib/birthday/validation";
 
 function chapter(orderIndex: number) {
   return {
@@ -22,6 +26,23 @@ describe("public and admin input validation", () => {
         clientEventId: "client-1",
       }),
     ).toMatchObject({ campaignSlug: "thang-8-ruc-ro" });
+  });
+
+  it("accepts only the three pixel quest event names", () => {
+    expect(parsePixelQuestEvent({
+      eventName: "pixel_quest_checkpoint",
+      chapterId: "44444444-0001-4001-8001-000000000001",
+      checkpointId: "childhood-village",
+      clientEventId: "pixel-checkpoint-1",
+      moveCount: 5,
+    })).toMatchObject({ checkpointId: "childhood-village", moveCount: 5 });
+
+    expect(() => parsePixelQuestEvent({
+      eventName: "voucher_revealed",
+      chapterId: "44444444-0001-4001-8001-000000000001",
+      checkpointId: null,
+      clientEventId: "forged-event",
+    })).toThrow(/not an allowed pixel quest event/);
   });
 
   it("requires exactly four chapters for each recipient", () => {

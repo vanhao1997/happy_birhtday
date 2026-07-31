@@ -1,12 +1,13 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { CSSProperties, FormEvent, KeyboardEvent, useCallback, useEffect, useReducer, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import QRCode from "qrcode";
 import {
   AlertCircle,
   Check,
+  ChevronLeft,
   ChevronRight,
   Gift,
   Loader2,
@@ -21,11 +22,20 @@ import type {
   CompleteSessionResult,
   PublicCampaignDTO,
   PublicChapterDTO,
+  PublicChildCharacterDTO,
+  PublicMemoryImageDTO,
+  PublicPixelQuestConfigDTO,
   RecordChoiceResult,
   StartSessionResult,
   ChapterGameType,
+  PixelCharacterArchetype,
 } from "@/lib/birthday/types";
 import type { ApiStatus, BirthdayChoice, BirthdaySession } from "./types";
+import {
+  createPixelQuestState,
+  pixelQuestProgress,
+  pixelQuestReducer,
+} from "./pixel-quest";
 
 type BirthdayExperienceProps = {
   slug: string;
@@ -43,6 +53,12 @@ const CHAPTER_GAME_LABELS: Record<ChapterGameType, string> = {
   detail_hunt: "Tìm chi tiết riêng",
   message_unlock: "Mở lời kể đồng đội",
   story_branch: "Ngã rẽ cá nhân",
+};
+const PIXEL_CHARACTER_LABELS: Record<PixelCharacterArchetype, string> = {
+  princess: "Công chúa",
+  prince: "Hoàng tử",
+  emperor: "Hoàng thượng",
+  knight: "Kỵ sĩ",
 };
 
 function recipientTone(index: number) {
@@ -117,6 +133,8 @@ function remoteToLocalChapter(remote: PublicChapterDTO) {
     title: remote.title,
     scene: remote.body,
     prompt: remote.prompt,
+    memoryImages: remote.memoryImages ?? [],
+    pixelQuest: remote.pixelQuest,
     remote,
     choices: remote.options.map((option) => ({
       id: option.key,
@@ -134,6 +152,351 @@ function pickRemoteChoice(remote: PublicChapterDTO, choice: BirthdayChoice) {
 
 function getVoucherQrValue(voucher: CompleteSessionResult["voucher"]) {
   return voucher.code;
+}
+
+export function PixelMemoryQuest({
+  images,
+  pixelQuest,
+  recipientName,
+  childCharacter,
+  accent,
+  sessionToken,
+  sessionId,
+  chapterId,
+}: {
+  images: PublicMemoryImageDTO[];
+  pixelQuest: PublicPixelQuestConfigDTO;
+  recipientName: string;
+  childCharacter: PublicChildCharacterDTO;
+  accent: "pear" | "cyan" | "coral";
+  sessionToken?: string;
+  sessionId: string;
+  chapterId: string;
+}) {
+  const safeImages = Array.isArray(images) ? images : [];
+  const frames = Array.from({ length: 3 }, (_, index) => safeImages[index] ?? null);
+  const [questState, dispatchQuest] = useReducer(
+    pixelQuestReducer,
+    undefined,
+    () => createPixelQuestState(chapterId, pixelQuest),
+  );
+  const [isJumping, setIsJumping] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(false);
+  const screenRef = useRef<HTMLDivElement | null>(null);
+  const jumpTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sentEventIdsRef = useRef(new Set<string>());
+  const progressStorageKey = `happybirthday.pixelQuest.${sessionId || "local"}.${chapterId}`;
+  const unlockedCount = questState.visitedCheckpointIds.length;
+  const activeZoneIndex = Math.max(
+    0,
+    pixelQuest.zones.findIndex((zone) => zone.id === questState.activeCheckpointId),
+  );
+  const activeZone = pixelQuest.zones[activeZoneIndex];
+  const activeUnlocked = questState.activeCheckpointId !== null;
+  const activeImage = activeUnlocked ? frames[activeZoneIndex] : null;
+
+  useEffect(() => () => {
+    if (jumpTimeoutRef.current) clearTimeout(jumpTimeoutRef.current);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(progressStorageKey);
+      dispatchQuest({
+        type: "restore",
+        progress: raw ? JSON.parse(raw) as unknown : null,
+        config: pixelQuest,
+      });
+    } catch {
+      window.localStorage.removeItem(progressStorageKey);
+      dispatchQuest({ type: "hydrate", config: pixelQuest });
+    }
+  }, [pixelQuest, progressStorageKey]);
+
+  useEffect(() => {
+    if (!questState.hydrated) return;
+    window.localStorage.setItem(
+      progressStorageKey,
+      JSON.stringify(pixelQuestProgress(questState)),
+    );
+  }, [progressStorageKey, questState]);
+
+  useEffect(() => {
+    const screen = screenRef.current;
+    if (!screen) return;
+
+    const updateViewport = () => {
+      const width = screen.getBoundingClientRect().width || screen.clientWidth || 320;
+      dispatchQuest({ type: "resize", viewportWidth: width, config: pixelQuest });
+    };
+
+    updateViewport();
+    if (typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(updateViewport);
+    observer.observe(screen);
+    return () => observer.disconnect();
+  }, [pixelQuest]);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const updatePreference = () => setReducedMotion(media.matches);
+    updatePreference();
+    media.addEventListener?.("change", updatePreference);
+    return () => media.removeEventListener?.("change", updatePreference);
+  }, []);
+
+  useEffect(() => {
+    if (!sessionToken || !questState.hydrated) return;
+
+    const events = [
+      {
+        eventName: "pixel_quest_started",
+        checkpointId: null,
+        clientEventId: `pixel:start:${chapterId}`,
+      },
+      ...questState.visitedCheckpointIds.map((checkpointId) => ({
+        eventName: "pixel_quest_checkpoint",
+        checkpointId,
+        clientEventId: `pixel:checkpoint:${chapterId}:${checkpointId}`,
+      })),
+      ...(questState.questCompleted
+        ? [{
+            eventName: "pixel_quest_completed",
+            checkpointId: null,
+            clientEventId: `pixel:complete:${chapterId}`,
+          }]
+        : []),
+    ] as const;
+
+    for (const event of events) {
+      if (sentEventIdsRef.current.has(event.clientEventId)) continue;
+      sentEventIdsRef.current.add(event.clientEventId);
+
+      void fetch(`/api/sessions/${encodeURIComponent(sessionToken)}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...event,
+          chapterId,
+          moveCount: questState.moveCount,
+        }),
+      }).then((response) => {
+        if (!response.ok) sentEventIdsRef.current.delete(event.clientEventId);
+      }).catch(() => {
+        sentEventIdsRef.current.delete(event.clientEventId);
+      });
+    }
+  }, [chapterId, questState, sessionToken]);
+
+  function movePlayer(delta: -1 | 1) {
+    dispatchQuest({ type: "move", direction: delta, config: pixelQuest });
+  }
+
+  function enterGate(index: number) {
+    const zone = pixelQuest.zones[index];
+    if (!zone) return;
+    dispatchQuest({ type: "visit", checkpointId: zone.id, config: pixelQuest });
+  }
+
+  function jump() {
+    if (reducedMotion) return;
+    setIsJumping(false);
+    if (jumpTimeoutRef.current) clearTimeout(jumpTimeoutRef.current);
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => setIsJumping(true));
+    } else {
+      setIsJumping(true);
+    }
+    jumpTimeoutRef.current = setTimeout(() => setIsJumping(false), 360);
+  }
+
+  function handleGameKeyDown(event: KeyboardEvent<HTMLElement>) {
+    const key = event.key.toLowerCase();
+
+    if ((key === " " || key === "enter") && (event.target as HTMLElement).tagName === "BUTTON") {
+      return;
+    }
+
+    if (key === "arrowleft" || key === "a") {
+      event.preventDefault();
+      movePlayer(-1);
+    } else if (key === "arrowright" || key === "d") {
+      event.preventDefault();
+      movePlayer(1);
+    } else if (key === "arrowup" || key === "w" || key === " ") {
+      event.preventDefault();
+      jump();
+    }
+  }
+
+  return (
+    <section
+      className="memory-trail pixel-quest"
+      aria-labelledby="pixel-quest-title"
+      data-reduced-motion={reducedMotion}
+      data-quest-completed={questState.questCompleted}
+    >
+      <div className="memory-trail__intro pixel-quest__intro">
+        <div>
+          <p className="memory-trail__kicker">Memory Quest 2000 · 3 vùng đất</p>
+          <h3 id="pixel-quest-title">Đưa {childCharacter.name} băng qua vương quốc ký ức</h3>
+        </div>
+        <p>Đi qua từng vùng, nhặt đủ ba mảnh. Không game over, không mất quà.</p>
+      </div>
+      <div
+        ref={screenRef}
+        className="pixel-quest__screen"
+        data-unlocked={unlockedCount}
+        role="group"
+        aria-label={`Mini game ký ức của ${recipientName}. Dùng phím trái phải hoặc A D để di chuyển, phím lên hoặc W để nhảy.`}
+        tabIndex={0}
+        onKeyDown={handleGameKeyDown}
+      >
+        <div className="pixel-quest__hud" aria-hidden="true">
+          <span>LV 01</span>
+          <span>MEM {unlockedCount}/3</span>
+          <span>NO FAIL</span>
+        </div>
+        <div
+          className="pixel-quest__camera"
+          style={{
+            "--camera-x": `${questState.cameraPosition}px`,
+            "--pixel-world-width": `${pixelQuest.worldWidthPx}px`,
+          } as CSSProperties}
+        >
+          <div className="pixel-quest__world" aria-hidden="true">
+            {pixelQuest.zones.map((zone, index) => (
+              <span
+                className={`pixel-quest__zone pixel-quest__zone--${index + 1}`}
+                key={zone.id}
+              >
+                <b>{zone.title}</b>
+              </span>
+            ))}
+            <span className="pixel-scenery pixel-scenery--cloud-one" />
+            <span className="pixel-scenery pixel-scenery--cloud-two" />
+            <span className="pixel-scenery pixel-scenery--city" />
+            <span className="pixel-scenery pixel-scenery--castle" />
+            <span className="pixel-scenery pixel-scenery--tree-one" />
+            <span className="pixel-scenery pixel-scenery--tree-two" />
+            <span className="pixel-scenery pixel-scenery--portal" />
+            <span className="pixel-quest__ground" />
+          </div>
+          <div className="pixel-quest__gates">
+            {pixelQuest.zones.map((zone, index) => {
+              const unlocked = questState.visitedCheckpointIds.includes(zone.id);
+              return (
+                <div
+                  className={unlocked ? "pixel-gate is-unlocked" : "pixel-gate"}
+                  data-gate={index + 1}
+                  key={zone.id}
+                  style={{ "--checkpoint-x": `${zone.checkpointPosition}px` } as CSSProperties}
+                  aria-hidden="true"
+                >
+                  <span className="pixel-gate__number">0{index + 1}</span>
+                  <span className="pixel-gate__portal" aria-hidden="true"><i /></span>
+                  <small>{unlocked ? "OPEN" : "MEMORY"}</small>
+                  <span className={`pixel-npc pixel-npc--${index + 1}`}><i /></span>
+                </div>
+              );
+            })}
+          </div>
+          <div
+            className="pixel-player-track"
+            style={{ "--player-x": `${questState.playerPosition}px` } as CSSProperties}
+            aria-hidden="true"
+          >
+            <div className={isJumping ? `pixel-player tone-${accent} archetype-${childCharacter.archetype} is-jumping` : `pixel-player tone-${accent} archetype-${childCharacter.archetype}`}>
+              <span className="pixel-player__crown" />
+              <span className="pixel-player__cape" />
+              <span className="pixel-player__hair" />
+              <span className="pixel-player__face">{initialsFromName(recipientName).slice(0, 1)}</span>
+              <span className="pixel-player__shirt" />
+              <span className="pixel-player__legs"><i /><i /></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="pixel-quest__deck">
+        <div className="pixel-controller" aria-label="Điều khiển nhân vật">
+          <button type="button" className="pixel-controller__jump" aria-label="Nhảy" onClick={jump}>↑</button>
+          <button type="button" className="pixel-controller__left" aria-label="Đi sang trái" onClick={() => movePlayer(-1)} disabled={questState.playerPosition === pixelQuest.startPosition}>
+            <ChevronLeft size={22} aria-hidden="true" />
+          </button>
+          <button type="button" className="pixel-controller__right" aria-label="Đi sang phải" onClick={() => movePlayer(1)} disabled={questState.playerPosition >= pixelQuest.worldWidthPx - 80}>
+            <ChevronRight size={22} aria-hidden="true" />
+          </button>
+        </div>
+        <div className={`pixel-quest__identity tone-${accent}`}>
+          <span aria-hidden="true">P1</span>
+          <div>
+            <strong>{childCharacter.name}</strong>
+            <small>{PIXEL_CHARACTER_LABELS[childCharacter.archetype]}</small>
+            <small>{childCharacter.trait}</small>
+            <em>← → / A D để đi · ↑ / W để nhảy</em>
+          </div>
+        </div>
+      </div>
+      <ol className="pixel-quest__checkpoint-list" aria-label="Danh sách checkpoint ký ức">
+        {pixelQuest.zones.map((zone, index) => {
+          const unlocked = questState.visitedCheckpointIds.includes(zone.id);
+          const enabled = index === 0
+            || questState.visitedCheckpointIds.includes(pixelQuest.zones[index - 1].id);
+          return (
+            <li
+              key={zone.id}
+              data-active={questState.activeCheckpointId === zone.id}
+              data-enabled={enabled}
+              data-unlocked={unlocked}
+            >
+              <div className="pixel-quest__checkpoint-copy">
+                <span>0{index + 1}</span>
+                <div>
+                  <strong>{zone.title}</strong>
+                  <small>{zone.npcLine}</small>
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label={`${unlocked ? "Xem ký ức" : enabled ? "Khám phá" : "Chưa mở"}: ${zone.title}`}
+                aria-pressed={questState.activeCheckpointId === zone.id}
+                disabled={!enabled}
+                onClick={() => enterGate(index)}
+              >
+                {unlocked ? "Xem ký ức" : enabled ? "Khám phá" : "Chưa mở"}
+              </button>
+              <em>{unlocked ? "Đã tìm thấy" : enabled ? "Có thể khám phá" : "Mở sau vùng trước"}</em>
+            </li>
+          );
+        })}
+      </ol>
+      <p className="pixel-quest__log" role="status" aria-live="polite">
+        {questState.questCompleted
+          ? "Đã gom đủ 3 mảnh ký ức. Cổng tuổi mới sáng rồi!"
+          : activeUnlocked
+            ? `Đã mở ${activeZone.title}. ${activeZone.npcLine}`
+            : "Hành trình bắt đầu. Di chuyển sang phải hoặc chọn Làng tuổi thơ."}
+      </p>
+      <div className={activeUnlocked ? "pixel-memory-reveal is-unlocked" : "pixel-memory-reveal"}>
+        <div className="pixel-memory-reveal__frame">
+          {activeImage ? (
+            <Image src={activeImage.url} alt={activeImage.alt} width={640} height={480} sizes="(max-width: 640px) 88vw, 520px" unoptimized />
+          ) : activeUnlocked ? (
+            <span><strong>MEMORY FOUND</strong><small>Ải đã mở · chờ ảnh thật</small></span>
+          ) : (
+            <span><strong>MEMORY LOCKED</strong><small>Đi tới cổng ký ức đầu tiên</small></span>
+          )}
+        </div>
+        <div>
+          <span>Vùng {String(activeZoneIndex + 1).padStart(2, "0")} · {unlockedCount}/3 mảnh</span>
+          <p>{activeImage ? activeImage.caption || activeImage.alt : activeUnlocked ? "Bạn đã nhặt được mảnh ký ức này. Admin có thể thêm ảnh thật vào đúng ải." : "Di chuyển nhân vật sang phải. Khi chạm cổng, ký ức sẽ tự mở."}</p>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 export function BirthdayExperience({ slug }: BirthdayExperienceProps) {
@@ -167,6 +530,7 @@ export function BirthdayExperience({ slug }: BirthdayExperienceProps) {
   const selectedRecipient = publicCampaign?.recipients.find(
     (recipient) => recipient.id === session.recipientId,
   );
+
   useEffect(() => {
     let cancelled = false;
 
@@ -366,6 +730,7 @@ export function BirthdayExperience({ slug }: BirthdayExperienceProps) {
     setSession((current) => ({
       ...current,
       token: result.token,
+      remoteSessionId: result.session.id,
       recipientId: result.recipient.id,
       selectedName: result.recipient.displayName,
       remoteChapter: result.chapter,
@@ -717,6 +1082,23 @@ export function BirthdayExperience({ slug }: BirthdayExperienceProps) {
               </p>
               <h2>{currentChapter.title}</h2>
               <p>{currentChapter.scene}</p>
+              {currentChapter.gameType === "memory_piece" || currentChapter.gameType === "detail_hunt" ? (
+                <PixelMemoryQuest
+                  key={currentChapterKey}
+                  images={currentChapter.memoryImages}
+                  pixelQuest={currentChapter.pixelQuest}
+                  recipientName={session.selectedName}
+                  childCharacter={selectedRecipient?.childCharacter ?? {
+                    name: `Bé ${session.selectedName}`,
+                    trait: "Tò mò, thích khám phá những điều thân quen",
+                    archetype: "princess",
+                  }}
+                  accent={selectedRecipient?.accent ?? "pear"}
+                  sessionToken={session.token}
+                  sessionId={session.remoteSessionId ?? session.recipientId ?? ""}
+                  chapterId={currentChapterKey}
+                />
+              ) : null}
               <div className="prompt-line">{currentChapter.prompt}</div>
               <div className="choice-stack">
                 {currentChapter.choices.map((choice) => (

@@ -21,6 +21,8 @@ import {
   type RequestContext,
   type StartSessionInput,
   type StartSessionResult,
+  type TrackPixelQuestEventInput,
+  type TrackPixelQuestEventResult,
 } from "./types";
 import {
   toPublicCampaignDTO,
@@ -276,6 +278,52 @@ export class DemoBirthdayRepository implements BirthdayRepository {
       voucher: toVoucherRevealDTO(voucher, decryptSecret(voucher.codeCiphertext), revealedAt),
       alreadyRevealed,
     };
+  }
+
+  async trackPixelQuestEvent(
+    token: string,
+    input: TrackPixelQuestEventInput,
+    context: RequestContext,
+  ): Promise<TrackPixelQuestEventResult> {
+    const session = this.findSessionByToken(token);
+    const chapter = this.data.chapters.find(
+      (item) => item.id === input.chapterId
+        && item.workspaceId === session.workspaceId
+        && item.campaignId === session.campaignId
+        && item.recipientId === session.recipientId
+        && item.isPublished,
+    );
+
+    if (!chapter) {
+      throw notFound("Chapter not found for session");
+    }
+
+    if (
+      input.eventName === "pixel_quest_checkpoint"
+      && !toPublicChapterDTO(chapter).pixelQuest.zones.some(
+        (zone) => zone.id === input.checkpointId,
+      )
+    ) {
+      throw conflict("checkpointId is not valid for this chapter");
+    }
+
+    const duplicate = this.events.some(
+      (event) => event.sessionId === session.id
+        && event.clientEventId === input.clientEventId,
+    );
+
+    if (!duplicate) {
+      this.trackEvent(
+        input.eventName,
+        session,
+        chapter.id,
+        input.clientEventId,
+        context,
+        { checkpointId: input.checkpointId, moveCount: input.moveCount },
+      );
+    }
+
+    return { accepted: true, duplicate };
   }
 
   async listAdminCampaigns(): Promise<never> {

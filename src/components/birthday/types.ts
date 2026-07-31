@@ -44,6 +44,7 @@ export type BirthdaySession = {
   selectedName: string;
   recipientId?: string;
   token?: string;
+  remoteSessionId?: string;
   remoteChapter?: PublicChapterDTO | null;
   nextChapter?: PublicChapterDTO | null;
   currentChapter: number;

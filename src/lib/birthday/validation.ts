@@ -1,5 +1,6 @@
 import {
   APP_TIMEZONE,
+  PIXEL_QUEST_EVENT_NAMES,
   REQUIRED_CHAPTER_COUNT,
   type AdminCampaignInput,
   type AdminCampaignPatch,
@@ -14,6 +15,8 @@ import {
   type RecordChoiceInput,
   type RecipientStatus,
   type StartSessionInput,
+  type PixelQuestEventName,
+  type TrackPixelQuestEventInput,
 } from "./types";
 import { badRequest } from "./errors";
 
@@ -152,6 +155,43 @@ export function parseRecordChoice(body: JsonObject): RecordChoiceInput {
     answerText: optionalString(body.answerText, "answerText", 1000),
     clientEventId: optionalString(body.clientEventId, "clientEventId", 128),
     elapsedMs: typeof elapsedMs === "number" ? elapsedMs : null,
+  };
+}
+
+export function parsePixelQuestEvent(body: JsonObject): TrackPixelQuestEventInput {
+  const eventName = body.eventName;
+  if (!PIXEL_QUEST_EVENT_NAMES.includes(eventName as PixelQuestEventName)) {
+    throw badRequest("eventName is not an allowed pixel quest event");
+  }
+
+  const checkpointId = optionalString(body.checkpointId, "checkpointId", 64);
+  if (eventName === "pixel_quest_checkpoint" && !checkpointId) {
+    throw badRequest("checkpointId is required for pixel_quest_checkpoint");
+  }
+  if (eventName !== "pixel_quest_checkpoint" && checkpointId) {
+    throw badRequest("checkpointId is only allowed for pixel_quest_checkpoint");
+  }
+
+  const moveCount = body.moveCount;
+  if (
+    moveCount !== undefined
+    && moveCount !== null
+    && (
+      typeof moveCount !== "number"
+      || !Number.isInteger(moveCount)
+      || moveCount < 0
+      || moveCount > 10000
+    )
+  ) {
+    throw badRequest("moveCount must be an integer between 0 and 10000");
+  }
+
+  return {
+    eventName: eventName as PixelQuestEventName,
+    chapterId: assertUuid(body.chapterId, "chapterId"),
+    checkpointId,
+    clientEventId: requiredString(body.clientEventId, "clientEventId", 128),
+    moveCount: typeof moveCount === "number" ? moveCount : null,
   };
 }
 

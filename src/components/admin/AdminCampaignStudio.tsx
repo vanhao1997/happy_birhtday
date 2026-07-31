@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { createClient, type Session } from "@supabase/supabase-js";
 import {
@@ -19,7 +20,11 @@ import {
 import { initialsFromName, toBirthdaySlug } from "../birthday/content";
 import type { ApiStatus } from "../birthday/types";
 import { apiErrorMessage } from "@/lib/api-error";
-import type { AdminCampaignAnalyticsResult, ChapterGameType } from "@/lib/birthday/types";
+import type {
+  AdminCampaignAnalyticsResult,
+  ChapterGameType,
+  PixelCharacterArchetype,
+} from "@/lib/birthday/types";
 
 type EditableOption = {
   key: string;
@@ -36,11 +41,22 @@ type EditableChapter = {
   options: EditableOption[];
 };
 
+type EditableMemoryPhoto = {
+  url: string;
+  caption: string;
+};
+
 const CHAPTER_GAME_LABELS: Record<ChapterGameType, string> = {
   memory_piece: "Mảnh ghép ký ức",
   detail_hunt: "Tìm chi tiết riêng",
   message_unlock: "Mở lời kể đồng đội",
   story_branch: "Ngã rẽ cá nhân",
+};
+const PIXEL_CHARACTER_LABELS: Record<PixelCharacterArchetype, string> = {
+  princess: "Công chúa",
+  prince: "Hoàng tử",
+  emperor: "Hoàng thượng",
+  knight: "Kỵ sĩ",
 };
 
 const PLAY_STATUS_LABELS: Record<
@@ -73,8 +89,12 @@ type EditableRecipient = {
   relationLabel: string;
   birthdayDate: string;
   avatarUrl: string;
+  childhoodPhotos: EditableMemoryPhoto[];
   accent: "pear" | "cyan" | "coral";
   character: string;
+  childCharacterName: string;
+  childCharacterTrait: string;
+  childCharacterArchetype: PixelCharacterArchetype;
   chapters: EditableChapter[];
   messageSender: string;
   messageBody: string;
@@ -165,8 +185,14 @@ function recipientSeed(index: number, name: string, role: string): EditableRecip
     relationLabel: role,
     birthdayDate: `199${index + 3}-08-${String(index * 8 + 5).padStart(2, "0")}`,
     avatarUrl: "",
+    childhoodPhotos: Array.from({ length: 3 }, () => ({ url: "", caption: "" })),
     accent: tones[(index - 1) % tones.length],
     character: index % 2 === 0 ? "Người dẫn đường bình tĩnh" : "Người giữ nhịp ấm áp",
+    childCharacterName: `Bé ${name}`,
+    childCharacterTrait: index % 2 === 0
+      ? "Tò mò, nhanh trí và thích tìm lối mới"
+      : "Ấm áp, tinh nghịch và luôn nhặt lại những điều đáng nhớ",
+    childCharacterArchetype: (["princess", "prince", "emperor", "knight"] as const)[(index - 1) % 4],
     chapters: chapterSet(name, role),
     messageSender: "Đội dự án",
     messageBody: `Chúc mừng sinh nhật ${name}. Cảm ơn bạn vì ${role.toLowerCase()} trong những ngày nhiều việc.`,
@@ -182,6 +208,16 @@ function recipientSeed(index: number, name: string, role: string): EditableRecip
 
 function toBangkokIso(date: string) {
   return date ? new Date(`${date}T00:00:00+07:00`).toISOString() : null;
+}
+
+function isHttpsUrl(value: string) {
+  if (!value.trim()) return true;
+
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 async function readJson(response: Response) {
@@ -333,6 +369,17 @@ export function AdminCampaignStudio() {
     });
   }
 
+  function updateChildhoodPhoto(
+    photoIndex: number,
+    patch: Partial<EditableMemoryPhoto>,
+  ) {
+    updateRecipient({
+      childhoodPhotos: currentRecipient.childhoodPhotos.map((photo, index) =>
+        index === photoIndex ? { ...photo, ...patch } : photo,
+      ),
+    });
+  }
+
   function updateOption(
     chapterIndex: number,
     optionIndex: number,
@@ -413,6 +460,9 @@ export function AdminCampaignStudio() {
         return "Mỗi người cần tên và ngày sinh tháng 8.";
       }
       if (!recipient.birthdayDate.includes("-08-")) return `${recipient.displayName} chưa có sinh nhật tháng 8.`;
+      if (recipient.childhoodPhotos.some((photo) => !isHttpsUrl(photo.url))) {
+        return `Album tuổi thơ của ${recipient.displayName} chỉ nhận URL HTTPS hợp lệ.`;
+      }
       if (recipient.chapters.length !== 4 || recipient.chapters.some((chapter) => chapter.options.length < 1)) {
         return `${recipient.displayName} cần đủ bốn chương và lựa chọn.`;
       }
@@ -461,6 +511,14 @@ export function AdminCampaignStudio() {
         setSavedCampaignId(campaignId);
 
         for (const recipient of recipients) {
+          const memoryImages = recipient.childhoodPhotos
+            .filter((photo) => photo.url.trim())
+            .slice(0, 3)
+            .map((photo, index) => ({
+              url: photo.url.trim(),
+              alt: `Ảnh tuổi thơ ${index + 1} của ${recipient.displayName.trim() || "người nhận"}`,
+              caption: photo.caption.trim(),
+            }));
           const visibleMessage =
             recipient.consentStatus === "approved"
               ? `“${recipient.messageBody}” — ${recipient.messageSender}`
@@ -473,6 +531,7 @@ export function AdminCampaignStudio() {
               gameType: chapter.gameType,
               estimatedSeconds: 75,
               noFailPath: true,
+              memoryImages: chapter.orderIndex <= 2 ? memoryImages : [],
             },
           }));
 
@@ -489,6 +548,9 @@ export function AdminCampaignStudio() {
               metadata: {
                 accent: recipient.accent,
                 character: recipient.character,
+                childCharacterName: recipient.childCharacterName.trim(),
+                childCharacterTrait: recipient.childCharacterTrait.trim(),
+                childCharacterArchetype: recipient.childCharacterArchetype,
                 consentReviewed: recipient.consentStatus === "approved",
               },
               chapters,
@@ -665,10 +727,83 @@ export function AdminCampaignStudio() {
                   <input id="recipient-role" value={currentRecipient.relationLabel} onChange={(event) => updateRecipient({ relationLabel: event.target.value })} />
                   <label htmlFor="recipient-character">Chi tiết cá nhân thứ hai: nhân vật đồng hành</label>
                   <input id="recipient-character" value={currentRecipient.character} onChange={(event) => updateRecipient({ character: event.target.value })} />
+                  <label htmlFor="recipient-child-character-name">Tên nhân vật nhí trên bản đồ</label>
+                  <input id="recipient-child-character-name" value={currentRecipient.childCharacterName} placeholder={`Bé ${currentRecipient.displayName || "Tên"}`} onChange={(event) => updateRecipient({ childCharacterName: event.target.value })} />
+                  <label htmlFor="recipient-child-character-trait">Tính cách tuổi thơ</label>
+                  <input id="recipient-child-character-trait" value={currentRecipient.childCharacterTrait} placeholder="Tò mò, thích khám phá" onChange={(event) => updateRecipient({ childCharacterTrait: event.target.value })} />
+                  <label htmlFor="recipient-child-character-archetype">Vai nhân vật pixel</label>
+                  <select id="recipient-child-character-archetype" value={currentRecipient.childCharacterArchetype} onChange={(event) => updateRecipient({ childCharacterArchetype: event.target.value as PixelCharacterArchetype })}>
+                    {Object.entries(PIXEL_CHARACTER_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+                  </select>
                   <label htmlFor="recipient-birthday">Ngày sinh tháng 8</label>
                   <input id="recipient-birthday" type="date" value={currentRecipient.birthdayDate} onChange={(event) => updateRecipient({ birthdayDate: event.target.value })} />
                   <label htmlFor="recipient-avatar">URL ảnh đã được đồng ý sử dụng</label>
                   <input id="recipient-avatar" type="url" value={currentRecipient.avatarUrl} placeholder="https://..." onChange={(event) => updateRecipient({ avatarUrl: event.target.value })} />
+                  <section className="childhood-photo-editor" aria-labelledby="childhood-photo-title">
+                    <div className="childhood-photo-editor__intro">
+                      <div>
+                        <h3 id="childhood-photo-title">Album tuổi thơ</h3>
+                        <p>Ba ảnh sẽ thành ba ải trong mini game pixel ký ức ở hai chương đầu tiên.</p>
+                      </div>
+                      <span>Ảnh riêng của {currentRecipient.displayName || "người nhận"}</span>
+                    </div>
+                    <div className="childhood-photo-list">
+                      {currentRecipient.childhoodPhotos.map((photo, photoIndex) => {
+                        const previewUrl = isHttpsUrl(photo.url) && photo.url.trim() ? photo.url.trim() : "";
+                        return (
+                          <div className="childhood-photo-row" key={`childhood-photo-${photoIndex + 1}`}>
+                            <div className="childhood-photo-preview" aria-hidden="true">
+                              {previewUrl ? (
+                                <Image
+                                  src={previewUrl}
+                                  alt=""
+                                  width={144}
+                                  height={112}
+                                  unoptimized
+                                />
+                              ) : (
+                                <span>Ảnh {String(photoIndex + 1).padStart(2, "0")}</span>
+                              )}
+                            </div>
+                            <div className="childhood-photo-fields">
+                              <label htmlFor={`childhood-photo-url-${photoIndex}`}>
+                                URL ảnh {photoIndex + 1}
+                              </label>
+                              <input
+                                id={`childhood-photo-url-${photoIndex}`}
+                                type="url"
+                                inputMode="url"
+                                value={photo.url}
+                                placeholder="https://..."
+                                aria-invalid={!isHttpsUrl(photo.url)}
+                                aria-describedby={`childhood-photo-helper-${photoIndex}`}
+                                onChange={(event) => updateChildhoodPhoto(photoIndex, { url: event.target.value })}
+                              />
+                              <small
+                                id={`childhood-photo-helper-${photoIndex}`}
+                                className={!isHttpsUrl(photo.url) ? "childhood-photo-helper is-error" : "childhood-photo-helper"}
+                              >
+                                {!isHttpsUrl(photo.url) ? "URL cần bắt đầu bằng https://" : "Dùng ảnh ngang hoặc vuông, tối thiểu 720 px."}
+                              </small>
+                              <label htmlFor={`childhood-photo-caption-${photoIndex}`}>
+                                Chú thích ngắn
+                              </label>
+                              <input
+                                id={`childhood-photo-caption-${photoIndex}`}
+                                value={photo.caption}
+                                maxLength={240}
+                                placeholder="Ví dụ: Mùa hè và chiếc xe đạp đầu tiên"
+                                onChange={(event) => updateChildhoodPhoto(photoIndex, { caption: event.target.value })}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p className="privacy-note">
+                      Chỉ dùng ảnh đã được người nhận hoặc gia đình đồng ý. Tránh ảnh chứa thông tin sức khỏe, xung đột gia đình hoặc dữ liệu nhạy cảm.
+                    </p>
+                  </section>
                   <label htmlFor="recipient-accent">Màu nhấn</label>
                   <select id="recipient-accent" value={currentRecipient.accent} onChange={(event) => updateRecipient({ accent: event.target.value as EditableRecipient["accent"] })}>
                     <option value="pear">Pear</option>
@@ -800,6 +935,14 @@ export function AdminCampaignStudio() {
             <h2>{currentRecipient.displayName}</h2>
             <p>{currentRecipient.relationLabel}</p>
             <p>{currentRecipient.character}</p>
+            <div className={`admin-child-character tone-${currentRecipient.accent}`} aria-label={`Nhân vật ${currentRecipient.childCharacterName}`}>
+              <span aria-hidden="true">{initialsFromName(currentRecipient.displayName).slice(0, 1)}</span>
+              <div>
+                <strong>{currentRecipient.childCharacterName || `Bé ${currentRecipient.displayName}`}</strong>
+                <small>{PIXEL_CHARACTER_LABELS[currentRecipient.childCharacterArchetype]}</small>
+                <small>{currentRecipient.childCharacterTrait}</small>
+              </div>
+            </div>
             <small>{currentRecipient.chapters[1]?.body}</small>
             <small>Voucher: {currentRecipient.voucherTitle}</small>
           </aside>

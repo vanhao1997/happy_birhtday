@@ -13,6 +13,9 @@ const recipientSeeds = [
     relationLabel: "Người giữ nhịp dự án",
     birthdayDate: "1996-08-05",
     character: "Chim dẫn đường giữ nhịp",
+    childCharacterName: "Bé Mai Mây",
+    childCharacterTrait: "Hay gom những mẩu chuyện nhỏ vào chiếc túi màu lê",
+    childCharacterArchetype: "princess",
     strength: "những lần bạn gom đầu việc rời rạc thành một kế hoạch ai cũng theo được",
     memory: "buổi chiều bạn đổi lịch ba nhóm để bản release vẫn kịp mà không ai phải chạy quá sức",
     teammateNote: "Mai luôn biết lúc nào cần kéo cả đội về cùng một nhịp.",
@@ -27,6 +30,9 @@ const recipientSeeds = [
     relationLabel: "Người gỡ việc khó",
     birthdayDate: "1994-08-18",
     character: "Cáo bản đồ chuyên tìm lối tắt",
+    childCharacterName: "Bé Quân La Bàn",
+    childCharacterTrait: "Tò mò, nhanh trí và luôn muốn biết con đường kế tiếp",
+    childCharacterArchetype: "prince",
     strength: "cách bạn bóc một vấn đề lớn thành vài bước nhỏ có thể bắt đầu ngay",
     memory: "lần bạn tìm ra nguyên nhân lỗi trước giờ demo và vẫn kịp giải thích để cả đội hiểu",
     teammateNote: "Quân làm việc khó bớt đáng sợ vì luôn chỉ ra bước tiếp theo.",
@@ -41,6 +47,9 @@ const recipientSeeds = [
     relationLabel: "Người làm sáng cuộc họp",
     birthdayDate: "1998-08-27",
     character: "Đom đóm ghi chú mang đèn coral",
+    childCharacterName: "Bé Hương Đom Đóm",
+    childCharacterTrait: "Mang theo một chiếc đèn nhỏ để soi sáng từng kỷ niệm",
+    childCharacterArchetype: "emperor",
     strength: "những câu hỏi ngắn giúp cuộc họp đi thẳng vào điều quan trọng",
     memory: "buổi retro bạn biến một đoạn im lặng dài thành cuộc nói chuyện rõ ràng và tử tế",
     teammateNote: "Hương khiến mọi người dễ nói thật hơn mà vẫn thấy được tôn trọng.",
@@ -107,6 +116,9 @@ export function createDemoData(): DemoData {
     status: "active",
     metadata: {
       character: seed.character,
+      childCharacterName: seed.childCharacterName,
+      childCharacterTrait: seed.childCharacterTrait,
+      childCharacterArchetype: seed.childCharacterArchetype,
       accent: (["pear", "cyan", "coral"] as const)[index % 3],
     },
     createdAt: timestamp,
@@ -159,7 +171,12 @@ function chapterCopies(
       ],
       mediaAssetId: null,
       isPublished: true,
-      metadata: { gameType: "memory_piece", estimatedSeconds: 75, noFailPath: true },
+      metadata: {
+        gameType: "memory_piece",
+        estimatedSeconds: 75,
+        noFailPath: true,
+        pixelQuest: pixelQuestFor(displayName),
+      },
       createdAt: timestamp,
       updatedAt: timestamp,
     },
@@ -178,7 +195,12 @@ function chapterCopies(
       ],
       mediaAssetId: null,
       isPublished: true,
-      metadata: { gameType: "detail_hunt", estimatedSeconds: 75, noFailPath: true },
+      metadata: {
+        gameType: "detail_hunt",
+        estimatedSeconds: 75,
+        noFailPath: true,
+        pixelQuest: pixelQuestFor(displayName),
+      },
       createdAt: timestamp,
       updatedAt: timestamp,
     },
@@ -221,6 +243,36 @@ function chapterCopies(
       updatedAt: timestamp,
     },
   ];
+}
+
+function pixelQuestFor(displayName: string) {
+  return {
+    version: 1,
+    preset: "royal-memory-kingdom",
+    worldWidthPx: 1800,
+    startPosition: 80,
+    zones: [
+      {
+        id: "childhood-village",
+        title: "Làng tuổi thơ",
+        checkpointPosition: 480,
+        npcLine: `${displayName} ơi, mảnh đầu tiên nằm cạnh mái nhà quen thuộc.`,
+      },
+      {
+        id: "memory-castle",
+        title: "Lâu đài ký ức",
+        checkpointPosition: 960,
+        npcLine: `Cánh cổng này giữ một khoảnh khắc chỉ thuộc về ${displayName}.`,
+      },
+      {
+        id: "new-age-gate",
+        title: "Cổng tuổi mới",
+        checkpointPosition: 1520,
+        npcLine: `Mang đủ ba mảnh tới đây để mở đường tuổi mới cho ${displayName}.`,
+      },
+    ],
+    noFailPath: true,
+  };
 }
 
 function chapterId(recipientIndex: number, orderIndex: number): string {

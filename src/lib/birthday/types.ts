@@ -10,6 +10,19 @@ export type RecipientStatus = "active" | "hidden" | "archived";
 export type SessionStatus = "active" | "completed" | "abandoned";
 export type AdminRole = "owner" | "admin" | "editor" | "viewer";
 export type MessageConsentStatus = "pending" | "approved" | "revoked";
+export const PIXEL_CHARACTER_ARCHETYPES = [
+  "princess",
+  "prince",
+  "emperor",
+  "knight",
+] as const;
+export type PixelCharacterArchetype = (typeof PIXEL_CHARACTER_ARCHETYPES)[number];
+export const PIXEL_QUEST_EVENT_NAMES = [
+  "pixel_quest_started",
+  "pixel_quest_checkpoint",
+  "pixel_quest_completed",
+] as const;
+export type PixelQuestEventName = (typeof PIXEL_QUEST_EVENT_NAMES)[number];
 
 export interface Workspace {
   id: string;
@@ -213,6 +226,13 @@ export interface PublicRecipientDTO {
   avatarUrl: string | null;
   accent: "pear" | "cyan" | "coral" | null;
   character: string | null;
+  childCharacter: PublicChildCharacterDTO;
+}
+
+export interface PublicChildCharacterDTO {
+  name: string;
+  trait: string;
+  archetype: PixelCharacterArchetype;
 }
 
 export interface PublicCampaignDTO {
@@ -233,6 +253,28 @@ export interface PublicChapterOptionDTO {
   label: string;
 }
 
+export interface PublicMemoryImageDTO {
+  url: string;
+  alt: string;
+  caption: string;
+}
+
+export interface PublicPixelQuestZoneDTO {
+  id: string;
+  title: string;
+  checkpointPosition: number;
+  npcLine: string;
+}
+
+export interface PublicPixelQuestConfigDTO {
+  version: 1;
+  preset: "royal-memory-kingdom";
+  worldWidthPx: number;
+  startPosition: number;
+  zones: PublicPixelQuestZoneDTO[];
+  noFailPath: true;
+}
+
 export interface PublicChapterDTO {
   id: string;
   orderIndex: number;
@@ -241,6 +283,8 @@ export interface PublicChapterDTO {
   body: string;
   prompt: string;
   options: PublicChapterOptionDTO[];
+  memoryImages: PublicMemoryImageDTO[];
+  pixelQuest: PublicPixelQuestConfigDTO;
 }
 
 export interface PublicSessionDTO {
@@ -283,6 +327,19 @@ export interface RecordChoiceInput {
   answerText: string | null;
   clientEventId: string | null;
   elapsedMs: number | null;
+}
+
+export interface TrackPixelQuestEventInput {
+  eventName: PixelQuestEventName;
+  chapterId: string;
+  checkpointId: string | null;
+  clientEventId: string;
+  moveCount: number | null;
+}
+
+export interface TrackPixelQuestEventResult {
+  accepted: true;
+  duplicate: boolean;
 }
 
 export interface PublicCampaignResult {

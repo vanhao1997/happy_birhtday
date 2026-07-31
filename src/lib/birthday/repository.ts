@@ -16,6 +16,8 @@ import type {
   RequestContext,
   StartSessionInput,
   StartSessionResult,
+  TrackPixelQuestEventInput,
+  TrackPixelQuestEventResult,
   Voucher,
 } from "./types";
 import { DemoBirthdayRepository } from "./demo-repository";
@@ -33,6 +35,11 @@ export interface BirthdayRepository {
     context: RequestContext,
   ): Promise<RecordChoiceResult>;
   completeSession(token: string, context: RequestContext): Promise<CompleteSessionResult>;
+  trackPixelQuestEvent(
+    token: string,
+    input: TrackPixelQuestEventInput,
+    context: RequestContext,
+  ): Promise<TrackPixelQuestEventResult>;
 
   listAdminCampaigns(auth: AdminIdentity): Promise<Campaign[]>;
   createAdminCampaign(auth: AdminIdentity, input: AdminCampaignInput): Promise<Campaign>;

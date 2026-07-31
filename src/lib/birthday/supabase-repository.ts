@@ -44,6 +44,8 @@ import {
   type SessionStatus,
   type StartSessionInput,
   type StartSessionResult,
+  type TrackPixelQuestEventInput,
+  type TrackPixelQuestEventResult,
   type Voucher,
 } from "./types";
 import type { BirthdayRepository } from "./repository";
@@ -458,6 +460,53 @@ export class SupabaseBirthdayRepository implements BirthdayRepository {
       voucher: toVoucherRevealDTO(voucher, decryptSecret(voucher.codeCiphertext), revealedAt),
       alreadyRevealed,
     };
+  }
+
+  async trackPixelQuestEvent(
+    token: string,
+    input: TrackPixelQuestEventInput,
+    context: RequestContext,
+  ): Promise<TrackPixelQuestEventResult> {
+    const session = await this.findSessionByToken(token);
+    const chapter = await this.findChapter(input.chapterId, session);
+
+    if (
+      input.eventName === "pixel_quest_checkpoint"
+      && !toPublicChapterDTO(chapter).pixelQuest.zones.some(
+        (zone) => zone.id === input.checkpointId,
+      )
+    ) {
+      throw conflict("checkpointId is not valid for this chapter");
+    }
+
+    const rows = await this.client.table<GameEventRow>(
+      "game_events",
+      [select("*"), ["on_conflict", "session_id,client_event_id"]],
+      {
+        method: "POST",
+        body: [
+          {
+            workspace_id: session.workspaceId,
+            campaign_id: session.campaignId,
+            recipient_id: session.recipientId,
+            session_id: session.id,
+            event_name: input.eventName,
+            chapter_id: chapter.id,
+            client_event_id: input.clientEventId,
+            occurred_date_bkk: bangkokDateKey(),
+            payload: {
+              checkpointId: input.checkpointId,
+              moveCount: input.moveCount,
+            },
+            request_ip_hash: context.ipHash,
+            user_agent: context.userAgent,
+          },
+        ],
+        prefer: "resolution=ignore-duplicates,return=representation",
+      },
+    );
+
+    return { accepted: true, duplicate: rows.length === 0 };
   }
 
   async listAdminCampaigns(auth: AdminIdentity): Promise<Campaign[]> {
