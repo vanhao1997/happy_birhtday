@@ -3,6 +3,13 @@
     "date": "2026-07-31",
     "macrostructure": "Narrative Workflow",
     "theme": "Hum",
+    "enrichment": "Tier-B camera-follow pixel world with collision, tutorial, pause and memory scenes",
+    "brief": "Complete-game upgrade for the five-station royal childhood memory map"
+  },
+  {
+    "date": "2026-07-31",
+    "macrostructure": "Narrative Workflow",
+    "theme": "Hum",
     "enrichment": "Tier-B pixel tile atlas, four royal sprites, free 2D movement and mobile D-pad",
     "brief": "Playable Y2K royal pixel RPG with five memory stations and a no-fail voucher path"
   },

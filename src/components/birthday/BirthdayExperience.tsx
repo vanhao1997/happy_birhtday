@@ -23,9 +23,9 @@ import type {
   StartSessionResult,
 } from "@/lib/birthday/types";
 import type { ApiStatus, BirthdaySession } from "./types";
-import { ChildhoodMemoryMap } from "./ChildhoodMemoryMap";
+import { ChildhoodMemoryMapGame as ChildhoodMemoryMap } from "./ChildhoodMemoryMapGame";
 
-export { ChildhoodMemoryMap as PixelMemoryQuest } from "./ChildhoodMemoryMap";
+export { ChildhoodMemoryMapGame as PixelMemoryQuest } from "./ChildhoodMemoryMapGame";
 
 type BirthdayExperienceProps = {
   slug: string;

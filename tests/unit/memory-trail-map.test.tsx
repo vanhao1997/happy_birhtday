@@ -91,6 +91,22 @@ describe("childhood memory map", () => {
       DEFAULT_PIXEL_QUEST.zones[0],
       0,
     );
+    expect(screen.getByRole("dialog", { name: "Ngôi nhà tuổi thơ" })).toBeInTheDocument();
+  });
+
+  it("pauses movement and resumes without changing server progress", () => {
+    renderMap();
+    const map = screen.getByRole("group", { name: /WASD/ });
+    const character = document.querySelector<HTMLElement>(".childhood-map__character");
+    const start = character?.style.getPropertyValue("--character-x");
+
+    fireEvent.keyDown(map, { key: "Escape" });
+    fireEvent.keyDown(map, { key: "ArrowRight" });
+    expect(character?.style.getPropertyValue("--character-x")).toBe(start);
+
+    fireEvent.click(screen.getByRole("button", { name: "Tiếp tục" }));
+    fireEvent.keyDown(map, { key: "ArrowRight" });
+    expect(character?.style.getPropertyValue("--character-x")).not.toBe(start);
   });
 
   it("opens the fifth station only after four server chapters", () => {
@@ -122,5 +138,7 @@ describe("childhood memory map", () => {
     expect(screen.getByRole("button", { name: /Xem lại trạm 5: Cổng tuổi mới/ }))
       .toHaveAttribute("aria-pressed", "false");
     expect(screen.getByText("GIFT OPEN")).toBeInTheDocument();
+    expect(window.localStorage.getItem("happybirthday.memoryMapWorld.v1.session-mai"))
+      .not.toContain("voucher");
   });
 });

@@ -110,7 +110,10 @@
   --dur-fast: 140ms;
   --dur-base: 220ms;
   --dur-slow: 420ms;
+  --dur-micro: 120ms;
+  --dur-short: 220ms;
   --pixel-world-width: 1800px;
+  --pixel-world-height: 1140px;
 
   --rule-thin: 1px;
   --rule-thick: 2px;

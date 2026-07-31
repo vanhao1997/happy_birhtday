@@ -625,7 +625,7 @@ const MAP_PIXEL_FLOWERS = [
   [1130, 674],
 ] as const;
 
-function MapArtwork() {
+export function MapArtwork() {
   return (
     <svg
       className="childhood-map__art"
@@ -766,7 +766,7 @@ function MapArtwork() {
   );
 }
 
-function RoyalPixelCharacter({ initial }: { initial: string }) {
+export function RoyalPixelCharacter({ initial }: { initial: string }) {
   return (
     <svg className="royal-pixel" viewBox="0 0 64 92" shapeRendering="crispEdges">
       <rect className="royal-pixel__shadow" x="18" y="84" width="30" height="5" />
