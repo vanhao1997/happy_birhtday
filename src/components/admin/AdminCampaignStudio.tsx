@@ -20,6 +20,7 @@ import {
 import { initialsFromName, toBirthdaySlug } from "../birthday/content";
 import type { ApiStatus } from "../birthday/types";
 import { apiErrorMessage } from "@/lib/api-error";
+import { DEFAULT_PIXEL_QUEST } from "@/lib/birthday/dto";
 import type {
   AdminCampaignAnalyticsResult,
   ChapterGameType,
@@ -117,7 +118,7 @@ type AdminIdentity = {
 const ADMIN_STEPS = [
   "Chiến dịch",
   "Người nhận",
-  "Bốn chương",
+  "Bốn ký ức",
   "Lời nhắn",
   "Voucher",
   "Preview",
@@ -135,10 +136,9 @@ function chapterSet(name: string, role: string): EditableChapter[] {
       gameType: "memory_piece",
       title: "Mảnh ghép đầu tiên",
       body: `${name}, hôm nay câu chuyện bắt đầu từ điều cả đội luôn ghi nhận: ${role.toLowerCase()}.`,
-      prompt: "Bạn muốn mang năng lượng nào vào tuổi mới?",
+      prompt: "Mở trạm đầu tiên trên bản đồ tuổi thơ.",
       options: [
-        { key: "focus", label: "Tập trung sâu", response: "Một khoảng tập trung sâu đã được giữ lại." },
-        { key: "steady", label: "Vững nhịp", response: "Nhịp vững đã mở đường sang chương tiếp theo." },
+        { key: "station-complete", label: "Đã khám phá", response: "Mảnh ký ức đầu tiên đã được giữ lại." },
       ],
     },
     {
@@ -146,10 +146,9 @@ function chapterSet(name: string, role: string): EditableChapter[] {
       gameType: "detail_hunt",
       title: "Khoảnh khắc chỉ bạn mới có",
       body: "Nhắc lại một tình huống thật ở công ty: một lần hỗ trợ, một câu nói quen, hoặc một chi tiết nhỏ khiến mọi người nhớ tới bạn.",
-      prompt: "Chi tiết nào nên nằm lại trong cuốn truyện?",
+      prompt: "Đi tiếp tới trạm thứ hai.",
       options: [
-        { key: "memory-a", label: "Khoảnh khắc thứ nhất", response: "Ký ức thứ nhất đã được ghim vào trang." },
-        { key: "memory-b", label: "Khoảnh khắc thứ hai", response: "Ký ức thứ hai đã trở thành dấu mốc." },
+        { key: "station-complete", label: "Đã khám phá", response: "Ký ức thứ hai đã trở thành dấu mốc." },
       ],
     },
     {
@@ -157,24 +156,41 @@ function chapterSet(name: string, role: string): EditableChapter[] {
       gameType: "message_unlock",
       title: "Lời kể từ đồng đội",
       body: "Một lời nhắn đã được đồng đội đồng ý sử dụng sẽ xuất hiện tại đây.",
-      prompt: "Bạn đoán lời nhắn này muốn cảm ơn điều gì?",
+      prompt: "Đi theo đường chấm tới lớp học cũ.",
       options: [
-        { key: "thanks-a", label: "Một lần giúp đúng lúc", response: "Lời cảm ơn đã được mở." },
-        { key: "thanks-b", label: "Cách bạn làm việc mỗi ngày", response: "Điều quen thuộc nhất cũng là điều đáng quý." },
+        { key: "station-complete", label: "Đã khám phá", response: "Lời cảm ơn đã được đặt cạnh ký ức thứ ba." },
       ],
     },
     {
       orderIndex: 4,
       gameType: "story_branch",
-      title: "Ngã rẽ tuổi mới",
-      body: "Không có lựa chọn sai. Mỗi hướng chỉ thay đổi cách câu chuyện khép lại.",
-      prompt: "Chọn một hướng cho chương mới.",
+      title: "Con đường ước mơ",
+      body: "Con đường cuối đi qua những ước mơ nhỏ trước khi tới cổng tuổi mới.",
+      prompt: "Đi hết con đường để thắp sáng cổng tuổi mới.",
       options: [
-        { key: "adventure", label: "Thử điều mới", response: "Đoạn kết mở ra một chuyến đi mới." },
-        { key: "slow", label: "Chậm mà chắc", response: "Đoạn kết giữ một khoảng thở rộng hơn." },
+        { key: "station-complete", label: "Đã khám phá", response: "Bốn mảnh ký ức đã cùng thắp sáng cánh cổng cuối." },
       ],
     },
   ];
+}
+
+function memoryMapFor(displayName: string) {
+  const name = displayName.trim() || "bạn";
+  const lines = [
+    `${name} ơi, cánh cửa nhỏ đang giữ nơi câu chuyện bắt đầu.`,
+    `Một buổi chiều đầy nắng của ${name} vẫn còn nằm giữa sân chơi này.`,
+    `Bàn học cũ giữ lại một điều từng khiến ${name} thật tự hào.`,
+    `Con đường này đi qua những ước mơ nhỏ ${name} từng tin là thật.`,
+    `Bốn mảnh ký ức đã sáng. Món quà riêng của ${name} đang ở phía sau cổng.`,
+  ];
+
+  return {
+    ...DEFAULT_PIXEL_QUEST,
+    zones: DEFAULT_PIXEL_QUEST.zones.map((zone, index) => ({
+      ...zone,
+      npcLine: lines[index] ?? zone.npcLine,
+    })),
+  };
 }
 
 function recipientSeed(index: number, name: string, role: string): EditableRecipient {
@@ -185,7 +201,7 @@ function recipientSeed(index: number, name: string, role: string): EditableRecip
     relationLabel: role,
     birthdayDate: `199${index + 3}-08-${String(index * 8 + 5).padStart(2, "0")}`,
     avatarUrl: "",
-    childhoodPhotos: Array.from({ length: 3 }, () => ({ url: "", caption: "" })),
+    childhoodPhotos: Array.from({ length: 5 }, () => ({ url: "", caption: "" })),
     accent: tones[(index - 1) % tones.length],
     character: index % 2 === 0 ? "Người dẫn đường bình tĩnh" : "Người giữ nhịp ấm áp",
     childCharacterName: `Bé ${name}`,
@@ -200,7 +216,7 @@ function recipientSeed(index: number, name: string, role: string): EditableRecip
     voucherTitle: index % 2 === 0 ? "Voucher ăn trưa cùng đội" : "Phiếu cà phê sáng",
     voucherDescription: `Một món quà nhỏ dành riêng cho ${name}.`,
     voucherCode: `${toBirthdaySlug(name).toUpperCase()}-THANG-8`,
-    voucherHint: "Mã dùng một lần sau khi hoàn tất bốn chương",
+    voucherHint: "Mã dùng một lần sau khi hoàn tất bốn trạm ký ức",
     voucherTerms: "Dùng một lần, ưu tiên lịch của người nhận.",
     voucherExpiresAt: "",
   };
@@ -380,19 +396,6 @@ export function AdminCampaignStudio() {
     });
   }
 
-  function updateOption(
-    chapterIndex: number,
-    optionIndex: number,
-    patch: Partial<EditableOption>,
-  ) {
-    const chapter = currentRecipient.chapters[chapterIndex];
-    updateChapter(chapterIndex, {
-      options: chapter.options.map((option, index) =>
-        index === optionIndex ? { ...option, ...patch } : option,
-      ),
-    });
-  }
-
   function addRecipient() {
     if (recipients.length >= 5) return;
     const index = recipients.length + 1;
@@ -464,7 +467,7 @@ export function AdminCampaignStudio() {
         return `Album tuổi thơ của ${recipient.displayName} chỉ nhận URL HTTPS hợp lệ.`;
       }
       if (recipient.chapters.length !== 4 || recipient.chapters.some((chapter) => chapter.options.length < 1)) {
-        return `${recipient.displayName} cần đủ bốn chương và lựa chọn.`;
+        return `${recipient.displayName} cần đủ bốn mảnh ký ức và mốc tiến trình nội bộ.`;
       }
       if (!recipient.voucherCode.trim() || !recipient.voucherTitle.trim()) {
         return `${recipient.displayName} chưa có mã voucher.`;
@@ -513,7 +516,7 @@ export function AdminCampaignStudio() {
         for (const recipient of recipients) {
           const memoryImages = recipient.childhoodPhotos
             .filter((photo) => photo.url.trim())
-            .slice(0, 3)
+            .slice(0, 5)
             .map((photo, index) => ({
               url: photo.url.trim(),
               alt: `Ảnh tuổi thơ ${index + 1} của ${recipient.displayName.trim() || "người nhận"}`,
@@ -531,7 +534,8 @@ export function AdminCampaignStudio() {
               gameType: chapter.gameType,
               estimatedSeconds: 75,
               noFailPath: true,
-              memoryImages: chapter.orderIndex <= 2 ? memoryImages : [],
+              memoryImages: chapter.orderIndex === 1 ? memoryImages : [],
+              pixelQuest: memoryMapFor(recipient.displayName),
             },
           }));
 
@@ -743,7 +747,7 @@ export function AdminCampaignStudio() {
                     <div className="childhood-photo-editor__intro">
                       <div>
                         <h3 id="childhood-photo-title">Album tuổi thơ</h3>
-                        <p>Ba ảnh sẽ thành ba ải trong mini game pixel ký ức ở hai chương đầu tiên.</p>
+                        <p>Năm ảnh sẽ nằm tại năm trạm trên bản đồ tuổi thơ của riêng người nhận.</p>
                       </div>
                       <span>Ảnh riêng của {currentRecipient.displayName || "người nhận"}</span>
                     </div>
@@ -820,10 +824,10 @@ export function AdminCampaignStudio() {
 
             {step === 2 ? (
               <div className="chapter-plan">
-                <h3>Bốn chương của {currentRecipient.displayName}</h3>
+                <h3>Bốn mảnh ký ức của {currentRecipient.displayName}</h3>
                 {currentRecipient.chapters.map((chapter, chapterIndex) => (
                   <fieldset className="form-panel" key={chapter.orderIndex}>
-                    <legend>Chương {chapter.orderIndex}</legend>
+                    <legend>Mảnh ký ức {chapter.orderIndex}</legend>
                     <small className="chapter-kind">
                       {CHAPTER_GAME_LABELS[chapter.gameType]} · khoảng 1 phút
                     </small>
@@ -831,15 +835,9 @@ export function AdminCampaignStudio() {
                     <input id={`chapter-title-${chapter.orderIndex}`} value={chapter.title} onChange={(event) => updateChapter(chapterIndex, { title: event.target.value })} />
                     <label htmlFor={`chapter-body-${chapter.orderIndex}`}>Nội dung cá nhân</label>
                     <textarea id={`chapter-body-${chapter.orderIndex}`} value={chapter.body} onChange={(event) => updateChapter(chapterIndex, { body: event.target.value })} />
-                    <label htmlFor={`chapter-prompt-${chapter.orderIndex}`}>Câu hỏi</label>
+                    <label htmlFor={`chapter-prompt-${chapter.orderIndex}`}>Dòng dẫn trên hành trình</label>
                     <input id={`chapter-prompt-${chapter.orderIndex}`} value={chapter.prompt} onChange={(event) => updateChapter(chapterIndex, { prompt: event.target.value })} />
-                    {chapter.options.map((option, optionIndex) => (
-                      <div className="option-editor" key={option.key}>
-                        <label htmlFor={`option-${chapter.orderIndex}-${optionIndex}`}>Lựa chọn {optionIndex + 1}</label>
-                        <input id={`option-${chapter.orderIndex}-${optionIndex}`} value={option.label} onChange={(event) => updateOption(chapterIndex, optionIndex, { label: event.target.value })} />
-                        <input aria-label={`Phản hồi lựa chọn ${optionIndex + 1}`} value={option.response} onChange={(event) => updateOption(chapterIndex, optionIndex, { response: event.target.value })} />
-                      </div>
-                    ))}
+                    <small>Mốc tiến trình được hệ thống ghi ngầm khi người chơi mở trạm; không có câu hỏi hiển thị.</small>
                   </fieldset>
                 ))}
               </div>

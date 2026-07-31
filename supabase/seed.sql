@@ -93,8 +93,46 @@ set metadata = jsonb_build_object(
     else 'story_branch'
   end,
   'estimatedSeconds', 75,
-  'noFailPath', true
+  'noFailPath', true,
+  'pixelQuest', jsonb_build_object(
+    'version', 2,
+    'preset', 'childhood-memory-atlas',
+    'mapWidthPx', 1200,
+    'mapHeightPx', 760,
+    'noFailPath', true,
+    'zones', jsonb_build_array(
+      jsonb_build_object('id', 'childhood-home', 'title', 'Ngôi nhà tuổi thơ', 'scene', 'childhood-home', 'mapXPercent', 14, 'mapYPercent', 73, 'npcLine', 'Cánh cửa nhỏ mở ra nơi câu chuyện bắt đầu.'),
+      jsonb_build_object('id', 'summer-playground', 'title', 'Sân chơi mùa hè', 'scene', 'summer-playground', 'mapXPercent', 34, 'mapYPercent', 43, 'npcLine', 'Một buổi chiều đầy nắng vẫn còn nằm giữa tiếng cười và trò chơi cũ.'),
+      jsonb_build_object('id', 'old-classroom', 'title', 'Lớp học ngày xưa', 'scene', 'old-classroom', 'mapXPercent', 53, 'mapYPercent', 66, 'npcLine', 'Bàn học cũ giữ lại một điều từng khiến bạn thật tự hào.'),
+      jsonb_build_object('id', 'dream-road', 'title', 'Con đường ước mơ', 'scene', 'dream-road', 'mapXPercent', 72, 'mapYPercent', 34, 'npcLine', 'Con đường uốn qua những ước mơ nhỏ từng được bạn tin là thật.'),
+      jsonb_build_object('id', 'new-age-gate', 'title', 'Cổng tuổi mới', 'scene', 'new-age-gate', 'mapXPercent', 88, 'mapYPercent', 69, 'npcLine', 'Bốn mảnh ký ức đã sáng. Cánh cổng cuối đang giữ món quà riêng của bạn.')
+    )
+  )
 )
+where campaign_id = '22222222-2222-4222-8222-222222222222';
+
+update public.campaigns
+set subtitle = 'Năm trạm tuổi thơ dành riêng cho đồng đội tháng 8'
+where id = '22222222-2222-4222-8222-222222222222';
+
+update public.chapters
+set
+  prompt = case order_index
+    when 1 then 'Mở trạm đầu tiên trên bản đồ tuổi thơ.'
+    when 2 then 'Đi tiếp tới trạm thứ hai.'
+    when 3 then 'Đi theo đường chấm tới lớp học cũ.'
+    else 'Đi hết con đường ước mơ để tới cổng tuổi mới.'
+  end,
+  options = jsonb_build_array(jsonb_build_object(
+    'key', 'station-complete',
+    'label', 'Đã khám phá',
+    'response', case order_index
+      when 1 then 'Mảnh ký ức đầu tiên đã được giữ lại.'
+      when 2 then 'Khoảnh khắc này đã trở thành dấu mốc thứ hai.'
+      when 3 then 'Lời nhắn đã được đặt cạnh ký ức thứ ba.'
+      else 'Bốn mảnh ký ức đã cùng thắp sáng cánh cổng cuối.'
+    end
+  ))
 where campaign_id = '22222222-2222-4222-8222-222222222222';
 
 update public.chapters

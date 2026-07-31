@@ -1,40 +1,47 @@
 import { describe, expect, it } from "vitest";
 import {
-  clampCameraOffset,
   createPixelQuestState,
+  isMemoryStationEnabled,
+  isMemoryStationVisited,
+  maximumReachableStationIndex,
   pixelQuestReducer,
 } from "@/components/birthday/pixel-quest";
 import { DEFAULT_PIXEL_QUEST } from "@/lib/birthday/dto";
 
-describe("pixel quest state machine", () => {
-  it("moves through all three distant checkpoints without a fail state", () => {
-    let state = createPixelQuestState("chapter-1", DEFAULT_PIXEL_QUEST);
-    state = pixelQuestReducer(state, {
-      type: "resize",
-      viewportWidth: 320,
-      config: DEFAULT_PIXEL_QUEST,
-    });
-
-    for (let step = 0; step < 18; step += 1) {
-      state = pixelQuestReducer(state, {
-        type: "move",
-        direction: 1,
-        config: DEFAULT_PIXEL_QUEST,
-      });
-    }
-
-    expect(state.playerPosition).toBe(1520);
-    expect(state.visitedCheckpointIds).toEqual(
-      DEFAULT_PIXEL_QUEST.zones.map((zone) => zone.id),
-    );
-    expect(state.questCompleted).toBe(true);
-    expect(state.moveCount).toBe(18);
+describe("childhood memory map state", () => {
+  it("opens one new station for every completed server chapter", () => {
+    expect(maximumReachableStationIndex(0, 5)).toBe(0);
+    expect(maximumReachableStationIndex(2, 5)).toBe(2);
+    expect(maximumReachableStationIndex(4, 5)).toBe(4);
+    expect(isMemoryStationEnabled(3, 2, 5)).toBe(false);
+    expect(isMemoryStationEnabled(3, 3, 5)).toBe(true);
   });
 
-  it("clamps the camera at the start, middle, and end of the world", () => {
-    expect(clampCameraOffset(80, 320, 1800)).toBe(0);
-    expect(clampCameraOffset(960, 320, 1800)).toBe(-800);
-    expect(clampCameraOffset(1760, 320, 1800)).toBe(-1480);
-    expect(clampCameraOffset(1760, 768, 1800)).toBe(-1032);
+  it("moves across the 2D station sequence without a fail state", () => {
+    let state = createPixelQuestState("journey-1", DEFAULT_PIXEL_QUEST);
+
+    state = pixelQuestReducer(state, {
+      type: "select",
+      checkpointId: DEFAULT_PIXEL_QUEST.zones[2].id,
+      completedChapterCount: 1,
+      config: DEFAULT_PIXEL_QUEST,
+    });
+    expect(state.activeCheckpointId).toBe(DEFAULT_PIXEL_QUEST.zones[0].id);
+
+    state = pixelQuestReducer(state, {
+      type: "select",
+      checkpointId: DEFAULT_PIXEL_QUEST.zones[1].id,
+      completedChapterCount: 1,
+      config: DEFAULT_PIXEL_QUEST,
+    });
+    expect(state.activeCheckpointId).toBe(DEFAULT_PIXEL_QUEST.zones[1].id);
+    expect(state.moveCount).toBe(1);
+  });
+
+  it("treats the fifth station as visited only after voucher reveal", () => {
+    expect(isMemoryStationVisited(0, 1, false)).toBe(true);
+    expect(isMemoryStationVisited(3, 4, false)).toBe(true);
+    expect(isMemoryStationVisited(4, 4, false)).toBe(false);
+    expect(isMemoryStationVisited(4, 4, true)).toBe(true);
   });
 });

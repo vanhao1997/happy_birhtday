@@ -17,6 +17,14 @@ export const PIXEL_CHARACTER_ARCHETYPES = [
   "knight",
 ] as const;
 export type PixelCharacterArchetype = (typeof PIXEL_CHARACTER_ARCHETYPES)[number];
+export const PIXEL_MEMORY_SCENES = [
+  "childhood-home",
+  "summer-playground",
+  "old-classroom",
+  "dream-road",
+  "new-age-gate",
+] as const;
+export type PixelMemoryScene = (typeof PIXEL_MEMORY_SCENES)[number];
 export const PIXEL_QUEST_EVENT_NAMES = [
   "pixel_quest_started",
   "pixel_quest_checkpoint",
@@ -262,15 +270,17 @@ export interface PublicMemoryImageDTO {
 export interface PublicPixelQuestZoneDTO {
   id: string;
   title: string;
-  checkpointPosition: number;
+  scene: PixelMemoryScene;
+  mapXPercent: number;
+  mapYPercent: number;
   npcLine: string;
 }
 
 export interface PublicPixelQuestConfigDTO {
-  version: 1;
-  preset: "royal-memory-kingdom";
-  worldWidthPx: number;
-  startPosition: number;
+  version: 2;
+  preset: "childhood-memory-atlas";
+  mapWidthPx: number;
+  mapHeightPx: number;
   zones: PublicPixelQuestZoneDTO[];
   noFailPath: true;
 }

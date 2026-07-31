@@ -32,10 +32,10 @@ describe("public and admin input validation", () => {
     expect(parsePixelQuestEvent({
       eventName: "pixel_quest_checkpoint",
       chapterId: "44444444-0001-4001-8001-000000000001",
-      checkpointId: "childhood-village",
+      checkpointId: "childhood-home",
       clientEventId: "pixel-checkpoint-1",
       moveCount: 5,
-    })).toMatchObject({ checkpointId: "childhood-village", moveCount: 5 });
+    })).toMatchObject({ checkpointId: "childhood-home", moveCount: 5 });
 
     expect(() => parsePixelQuestEvent({
       eventName: "voucher_revealed",

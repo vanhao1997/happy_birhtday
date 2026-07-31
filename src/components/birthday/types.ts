@@ -39,7 +39,7 @@ export type BirthdayCampaign = {
 };
 
 export type BirthdaySession = {
-  version: 1;
+  version: 2;
   slug: string;
   selectedName: string;
   recipientId?: string;
@@ -47,6 +47,7 @@ export type BirthdaySession = {
   remoteSessionId?: string;
   remoteChapter?: PublicChapterDTO | null;
   nextChapter?: PublicChapterDTO | null;
+  journeyChapter?: PublicChapterDTO | null;
   currentChapter: number;
   completedChapterIds: string[];
   answers: Record<string, string>;

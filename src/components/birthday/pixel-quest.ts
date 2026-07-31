@@ -1,56 +1,77 @@
 import type { PublicPixelQuestConfigDTO } from "@/lib/birthday/types";
 
-export const PIXEL_QUEST_MOVE_PX = 80;
-export const PIXEL_QUEST_PROGRESS_VERSION = 1 as const;
+export const PIXEL_QUEST_PROGRESS_VERSION = 2 as const;
 
 export interface PixelQuestProgress {
   version: typeof PIXEL_QUEST_PROGRESS_VERSION;
-  chapterId: string;
-  playerPosition: number;
-  visitedCheckpointIds: string[];
-  activeCheckpointId: string | null;
+  journeyId: string;
+  activeCheckpointId: string;
   moveCount: number;
-  questCompleted: boolean;
 }
 
 export interface PixelQuestState extends PixelQuestProgress {
-  viewportWidth: number;
-  cameraPosition: number;
   hydrated: boolean;
 }
 
 export type PixelQuestAction =
-  | { type: "move"; direction: -1 | 1; config: PublicPixelQuestConfigDTO }
-  | { type: "visit"; checkpointId: string; config: PublicPixelQuestConfigDTO }
-  | { type: "resize"; viewportWidth: number; config: PublicPixelQuestConfigDTO }
-  | { type: "restore"; progress: unknown; config: PublicPixelQuestConfigDTO }
-  | { type: "hydrate"; config: PublicPixelQuestConfigDTO };
+  | {
+      type: "select";
+      checkpointId: string;
+      completedChapterCount: number;
+      config: PublicPixelQuestConfigDTO;
+    }
+  | {
+      type: "sync";
+      completedChapterCount: number;
+      config: PublicPixelQuestConfigDTO;
+    }
+  | {
+      type: "restore";
+      progress: unknown;
+      completedChapterCount: number;
+      config: PublicPixelQuestConfigDTO;
+    }
+  | { type: "hydrate" };
 
-export function clampCameraOffset(
-  playerPosition: number,
-  viewportWidth: number,
-  worldWidth: number,
+export function maximumReachableStationIndex(
+  completedChapterCount: number,
+  stationCount: number,
 ) {
-  const safeViewportWidth = Math.max(0, viewportWidth);
-  const minimumOffset = Math.min(0, safeViewportWidth - worldWidth);
-  const centeredOffset = safeViewportWidth / 2 - playerPosition;
-  return Math.max(minimumOffset, Math.min(0, centeredOffset));
+  return Math.min(
+    Math.max(0, stationCount - 1),
+    Math.max(0, Math.floor(completedChapterCount)),
+  );
+}
+
+export function isMemoryStationEnabled(
+  stationIndex: number,
+  completedChapterCount: number,
+  stationCount: number,
+) {
+  return stationIndex >= 0
+    && stationIndex < stationCount
+    && stationIndex <= maximumReachableStationIndex(completedChapterCount, stationCount);
+}
+
+export function isMemoryStationVisited(
+  stationIndex: number,
+  completedChapterCount: number,
+  voucherRevealed: boolean,
+) {
+  return stationIndex < 4
+    ? completedChapterCount > stationIndex
+    : voucherRevealed;
 }
 
 export function createPixelQuestState(
-  chapterId: string,
+  journeyId: string,
   config: PublicPixelQuestConfigDTO,
 ): PixelQuestState {
   return {
     version: PIXEL_QUEST_PROGRESS_VERSION,
-    chapterId,
-    playerPosition: config.startPosition,
-    visitedCheckpointIds: [],
-    activeCheckpointId: null,
+    journeyId,
+    activeCheckpointId: config.zones[0]?.id ?? "childhood-home",
     moveCount: 0,
-    questCompleted: false,
-    viewportWidth: 0,
-    cameraPosition: 0,
     hydrated: false,
   };
 }
@@ -60,73 +81,49 @@ export function pixelQuestReducer(
   action: PixelQuestAction,
 ): PixelQuestState {
   switch (action.type) {
-    case "move": {
-      const maximumPosition = Math.max(action.config.startPosition, action.config.worldWidthPx - 80);
-      const playerPosition = Math.min(
-        maximumPosition,
-        Math.max(
-          action.config.startPosition,
-          state.playerPosition + action.direction * PIXEL_QUEST_MOVE_PX,
-        ),
+    case "select": {
+      const stationIndex = action.config.zones.findIndex(
+        (zone) => zone.id === action.checkpointId,
       );
-      const crossedZones = action.direction > 0
-        ? action.config.zones.filter(
-            (zone) => zone.checkpointPosition > state.playerPosition
-              && zone.checkpointPosition <= playerPosition,
-          )
-        : [];
-      const visitedCheckpointIds = uniqueCheckpointIds(
-        [...state.visitedCheckpointIds, ...crossedZones.map((zone) => zone.id)],
-        action.config,
-      );
-      const activeCheckpointId = crossedZones.at(-1)?.id ?? state.activeCheckpointId;
 
-      return finishState({
-        ...state,
-        playerPosition,
-        visitedCheckpointIds,
-        activeCheckpointId,
-        moveCount: state.moveCount + (playerPosition === state.playerPosition ? 0 : 1),
-      }, action.config);
-    }
-
-    case "visit": {
-      const zoneIndex = action.config.zones.findIndex((zone) => zone.id === action.checkpointId);
-      if (zoneIndex < 0) return state;
-
-      const previousZone = action.config.zones[zoneIndex - 1];
-      if (previousZone && !state.visitedCheckpointIds.includes(previousZone.id)) {
+      if (!isMemoryStationEnabled(
+        stationIndex,
+        action.completedChapterCount,
+        action.config.zones.length,
+      )) {
         return state;
       }
 
-      const zone = action.config.zones[zoneIndex];
-      return finishState({
-        ...state,
-        playerPosition: zone.checkpointPosition,
-        visitedCheckpointIds: uniqueCheckpointIds(
-          [...state.visitedCheckpointIds, zone.id],
-          action.config,
-        ),
-        activeCheckpointId: zone.id,
-        moveCount: state.moveCount + (zone.checkpointPosition === state.playerPosition ? 0 : 1),
-      }, action.config);
-    }
-
-    case "resize": {
-      const viewportWidth = Math.max(0, Math.round(action.viewportWidth));
       return {
         ...state,
-        viewportWidth,
-        cameraPosition: clampCameraOffset(
-          state.playerPosition,
-          viewportWidth,
-          action.config.worldWidthPx,
+        activeCheckpointId: action.checkpointId,
+        moveCount: state.moveCount + (
+          action.checkpointId === state.activeCheckpointId ? 0 : 1
         ),
       };
     }
 
+    case "sync": {
+      const activeIndex = action.config.zones.findIndex(
+        (zone) => zone.id === state.activeCheckpointId,
+      );
+      const maximumIndex = maximumReachableStationIndex(
+        action.completedChapterCount,
+        action.config.zones.length,
+      );
+
+      if (activeIndex >= 0 && activeIndex <= maximumIndex) return state;
+
+      return {
+        ...state,
+        activeCheckpointId: action.config.zones[maximumIndex]?.id
+          ?? action.config.zones[0]?.id
+          ?? state.activeCheckpointId,
+      };
+    }
+
     case "restore":
-      return restorePixelQuestState(state, action.progress, action.config);
+      return restorePixelQuestState(state, action.progress, action);
 
     case "hydrate":
       return { ...state, hydrated: true };
@@ -139,83 +136,55 @@ export function pixelQuestReducer(
 export function pixelQuestProgress(state: PixelQuestState): PixelQuestProgress {
   return {
     version: state.version,
-    chapterId: state.chapterId,
-    playerPosition: state.playerPosition,
-    visitedCheckpointIds: state.visitedCheckpointIds,
+    journeyId: state.journeyId,
     activeCheckpointId: state.activeCheckpointId,
     moveCount: state.moveCount,
-    questCompleted: state.questCompleted,
-  };
-}
-
-function finishState(
-  state: PixelQuestState,
-  config: PublicPixelQuestConfigDTO,
-): PixelQuestState {
-  return {
-    ...state,
-    questCompleted: state.visitedCheckpointIds.length === config.zones.length,
-    cameraPosition: clampCameraOffset(
-      state.playerPosition,
-      state.viewportWidth,
-      config.worldWidthPx,
-    ),
   };
 }
 
 function restorePixelQuestState(
   state: PixelQuestState,
   progress: unknown,
-  config: PublicPixelQuestConfigDTO,
+  action: Extract<PixelQuestAction, { type: "restore" }>,
 ): PixelQuestState {
   if (!progress || typeof progress !== "object" || Array.isArray(progress)) {
     return { ...state, hydrated: true };
   }
 
   const candidate = progress as Partial<PixelQuestProgress>;
+  const activeIndex = action.config.zones.findIndex(
+    (zone) => zone.id === candidate.activeCheckpointId,
+  );
+
   if (
     candidate.version !== PIXEL_QUEST_PROGRESS_VERSION
-    || candidate.chapterId !== state.chapterId
+    || candidate.journeyId !== state.journeyId
+    || !isMemoryStationEnabled(
+      activeIndex,
+      action.completedChapterCount,
+      action.config.zones.length,
+    )
   ) {
-    return { ...state, hydrated: true };
+    return pixelQuestReducer(
+      { ...state, hydrated: true },
+      {
+        type: "sync",
+        completedChapterCount: action.completedChapterCount,
+        config: action.config,
+      },
+    );
   }
 
-  const maximumPosition = Math.max(config.startPosition, config.worldWidthPx - 80);
-  const playerPosition = typeof candidate.playerPosition === "number"
-    ? Math.min(maximumPosition, Math.max(config.startPosition, candidate.playerPosition))
-    : config.startPosition;
-  const visitedCheckpointIds = uniqueCheckpointIds(
-    Array.isArray(candidate.visitedCheckpointIds)
-      ? candidate.visitedCheckpointIds.filter((id): id is string => typeof id === "string")
-      : [],
-    config,
-  );
-  const activeCheckpointId = typeof candidate.activeCheckpointId === "string"
-    && visitedCheckpointIds.includes(candidate.activeCheckpointId)
-    ? candidate.activeCheckpointId
-    : visitedCheckpointIds.at(-1) ?? null;
   const moveCount = typeof candidate.moveCount === "number"
     && Number.isInteger(candidate.moveCount)
     && candidate.moveCount >= 0
     ? Math.min(candidate.moveCount, 10000)
     : 0;
 
-  return finishState({
+  return {
     ...state,
-    playerPosition,
-    visitedCheckpointIds,
-    activeCheckpointId,
+    activeCheckpointId: candidate.activeCheckpointId as string,
     moveCount,
     hydrated: true,
-  }, config);
-}
-
-function uniqueCheckpointIds(
-  ids: string[],
-  config: PublicPixelQuestConfigDTO,
-) {
-  const visited = new Set(ids);
-  return config.zones
-    .map((zone) => zone.id)
-    .filter((id) => visited.has(id));
+  };
 }

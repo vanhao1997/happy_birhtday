@@ -16,8 +16,10 @@ import type {
 import {
   CHAPTER_GAME_TYPES,
   PIXEL_CHARACTER_ARCHETYPES,
+  PIXEL_MEMORY_SCENES,
   type ChapterGameType,
   type PixelCharacterArchetype,
+  type PixelMemoryScene,
 } from "./types";
 
 const FALLBACK_GAME_TYPES: ChapterGameType[] = [
@@ -27,39 +29,63 @@ const FALLBACK_GAME_TYPES: ChapterGameType[] = [
   "story_branch",
 ];
 
-const MAX_MEMORY_IMAGES = 3;
+const MAX_MEMORY_IMAGES = 5;
 const MAX_ALT_LENGTH = 160;
 const MAX_CAPTION_LENGTH = 240;
 const MAX_CHARACTER_NAME_LENGTH = 80;
 const MAX_CHARACTER_TRAIT_LENGTH = 160;
 const MAX_ZONE_TITLE_LENGTH = 64;
 const MAX_NPC_LINE_LENGTH = 180;
-const MIN_WORLD_WIDTH_PX = 1200;
-const MAX_WORLD_WIDTH_PX = 3200;
+const MIN_MAP_WIDTH_PX = 800;
+const MAX_MAP_WIDTH_PX = 2400;
+const MIN_MAP_HEIGHT_PX = 480;
+const MAX_MAP_HEIGHT_PX = 1400;
 
 export const DEFAULT_PIXEL_QUEST: PublicPixelQuestConfigDTO = {
-  version: 1,
-  preset: "royal-memory-kingdom",
-  worldWidthPx: 1800,
-  startPosition: 80,
+  version: 2,
+  preset: "childhood-memory-atlas",
+  mapWidthPx: 1200,
+  mapHeightPx: 760,
   zones: [
     {
-      id: "childhood-village",
-      title: "Làng tuổi thơ",
-      checkpointPosition: 480,
-      npcLine: "Chào nhà thám hiểm! Ký ức đầu tiên đang đợi cạnh mái nhà quen.",
+      id: "childhood-home",
+      title: "Ngôi nhà tuổi thơ",
+      scene: "childhood-home",
+      mapXPercent: 14,
+      mapYPercent: 73,
+      npcLine: "Cánh cửa nhỏ mở ra nơi câu chuyện của bạn bắt đầu.",
     },
     {
-      id: "memory-castle",
-      title: "Lâu đài ký ức",
-      checkpointPosition: 960,
-      npcLine: "Đi tiếp nhé. Cánh cổng chỉ mở bằng một điều bạn từng rất yêu thích.",
+      id: "summer-playground",
+      title: "Sân chơi mùa hè",
+      scene: "summer-playground",
+      mapXPercent: 34,
+      mapYPercent: 43,
+      npcLine: "Một buổi chiều đầy nắng vẫn còn nằm giữa tiếng cười và trò chơi cũ.",
+    },
+    {
+      id: "old-classroom",
+      title: "Lớp học ngày xưa",
+      scene: "old-classroom",
+      mapXPercent: 53,
+      mapYPercent: 66,
+      npcLine: "Bàn học cũ giữ lại một điều từng khiến bạn thật tự hào.",
+    },
+    {
+      id: "dream-road",
+      title: "Con đường ước mơ",
+      scene: "dream-road",
+      mapXPercent: 72,
+      mapYPercent: 34,
+      npcLine: "Con đường uốn qua những ước mơ nhỏ từng được bạn tin là thật.",
     },
     {
       id: "new-age-gate",
       title: "Cổng tuổi mới",
-      checkpointPosition: 1520,
-      npcLine: "Ba mảnh ký ức sẽ cùng soi sáng con đường bước sang tuổi mới.",
+      scene: "new-age-gate",
+      mapXPercent: 88,
+      mapYPercent: 69,
+      npcLine: "Bốn mảnh ký ức đã sáng. Cánh cổng cuối đang giữ món quà riêng của bạn.",
     },
   ],
   noFailPath: true,
@@ -110,19 +136,35 @@ function publicPixelQuestZone(value: unknown): PublicPixelQuestZoneDTO | null {
   const id = safeText(candidate.id, 64);
   const title = safeText(candidate.title, MAX_ZONE_TITLE_LENGTH);
   const npcLine = safeText(candidate.npcLine, MAX_NPC_LINE_LENGTH);
-  const checkpointPosition = candidate.checkpointPosition;
+  const scene = candidate.scene;
+  const mapXPercent = candidate.mapXPercent;
+  const mapYPercent = candidate.mapYPercent;
 
   if (
     !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)
     || !title
     || !npcLine
-    || typeof checkpointPosition !== "number"
-    || !Number.isInteger(checkpointPosition)
+    || !PIXEL_MEMORY_SCENES.includes(scene as PixelMemoryScene)
+    || typeof mapXPercent !== "number"
+    || !Number.isFinite(mapXPercent)
+    || mapXPercent < 5
+    || mapXPercent > 95
+    || typeof mapYPercent !== "number"
+    || !Number.isFinite(mapYPercent)
+    || mapYPercent < 8
+    || mapYPercent > 92
   ) {
     return null;
   }
 
-  return { id, title, checkpointPosition, npcLine };
+  return {
+    id,
+    title,
+    scene: scene as PixelMemoryScene,
+    mapXPercent,
+    mapYPercent,
+    npcLine,
+  };
 }
 
 export function publicPixelQuest(value: unknown): PublicPixelQuestConfigDTO {
@@ -131,25 +173,25 @@ export function publicPixelQuest(value: unknown): PublicPixelQuestConfigDTO {
   }
 
   const candidate = value as Record<string, unknown>;
-  const worldWidthPx = candidate.worldWidthPx;
-  const startPosition = candidate.startPosition;
+  const mapWidthPx = candidate.mapWidthPx;
+  const mapHeightPx = candidate.mapHeightPx;
   const zones = Array.isArray(candidate.zones)
     ? candidate.zones.map(publicPixelQuestZone)
     : [];
 
   if (
-    candidate.version !== 1
-    || candidate.preset !== "royal-memory-kingdom"
+    candidate.version !== 2
+    || candidate.preset !== "childhood-memory-atlas"
     || candidate.noFailPath !== true
-    || typeof worldWidthPx !== "number"
-    || !Number.isInteger(worldWidthPx)
-    || worldWidthPx < MIN_WORLD_WIDTH_PX
-    || worldWidthPx > MAX_WORLD_WIDTH_PX
-    || typeof startPosition !== "number"
-    || !Number.isInteger(startPosition)
-    || startPosition < 0
-    || startPosition >= worldWidthPx
-    || zones.length !== 3
+    || typeof mapWidthPx !== "number"
+    || !Number.isInteger(mapWidthPx)
+    || mapWidthPx < MIN_MAP_WIDTH_PX
+    || mapWidthPx > MAX_MAP_WIDTH_PX
+    || typeof mapHeightPx !== "number"
+    || !Number.isInteger(mapHeightPx)
+    || mapHeightPx < MIN_MAP_HEIGHT_PX
+    || mapHeightPx > MAX_MAP_HEIGHT_PX
+    || zones.length !== 5
     || zones.some((zone) => !zone)
   ) {
     return DEFAULT_PIXEL_QUEST;
@@ -157,22 +199,17 @@ export function publicPixelQuest(value: unknown): PublicPixelQuestConfigDTO {
 
   const safeZones = zones as PublicPixelQuestZoneDTO[];
   const zoneIds = new Set(safeZones.map((zone) => zone.id));
-  const checkpointsAreValid = safeZones.every((zone, index) => {
-    const previous = safeZones[index - 1];
-    return zone.checkpointPosition > startPosition
-      && zone.checkpointPosition <= worldWidthPx - 80
-      && (!previous || zone.checkpointPosition - previous.checkpointPosition >= 160);
-  });
+  const scenes = new Set(safeZones.map((zone) => zone.scene));
 
-  if (zoneIds.size !== 3 || !checkpointsAreValid) {
+  if (zoneIds.size !== 5 || scenes.size !== 5) {
     return DEFAULT_PIXEL_QUEST;
   }
 
   return {
-    version: 1,
-    preset: "royal-memory-kingdom",
-    worldWidthPx,
-    startPosition,
+    version: 2,
+    preset: "childhood-memory-atlas",
+    mapWidthPx,
+    mapHeightPx,
     zones: safeZones,
     noFailPath: true,
   };

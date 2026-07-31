@@ -141,12 +141,14 @@ describe("demo birthday repository", () => {
       },
       { url: "https://images.example.com/mai-02.jpg", caption: "Ngày đầu đi học" },
       { url: "https://images.example.com/mai-03.jpg", caption: "Một buổi hè" },
-      { url: "https://images.example.com/mai-04.jpg", caption: "Không được trả về" },
+      { url: "https://images.example.com/mai-04.jpg", caption: "Chiếc cặp đầu tiên" },
+      { url: "https://images.example.com/mai-05.jpg", caption: "Con đường tới trường" },
+      { url: "https://images.example.com/mai-06.jpg", caption: "Không được trả về" },
     ];
 
     const result = toPublicChapterDTO(chapter);
 
-    expect(result.memoryImages).toHaveLength(3);
+    expect(result.memoryImages).toHaveLength(5);
     expect(result.memoryImages[0]).toEqual({
       url: "https://images.example.com/mai-01.jpg",
       alt: "Mai hồi nhỏ bên chiếc xe đạp",
@@ -160,15 +162,15 @@ describe("demo birthday repository", () => {
     const data = createDemoData();
     const chapter = data.chapters[0];
     chapter.metadata.pixelQuest = {
-      version: 1,
-      preset: "royal-memory-kingdom",
-      worldWidthPx: 1800,
-      startPosition: 80,
+      version: 2,
+      preset: "childhood-memory-atlas",
+      mapWidthPx: 1200,
+      mapHeightPx: 760,
       noFailPath: true,
       zones: [
-        { id: "one", title: "One", checkpointPosition: 480, npcLine: "Hello" },
-        { id: "two", title: "Two", checkpointPosition: 400, npcLine: "Out of order" },
-        { id: "three", title: "Three", checkpointPosition: 1520, npcLine: "Hello" },
+        { id: "one", title: "One", scene: "childhood-home", mapXPercent: 14, mapYPercent: 73, npcLine: "Hello" },
+        { id: "two", title: "Two", scene: "summer-playground", mapXPercent: 34, mapYPercent: 43, npcLine: "Hello" },
+        { id: "three", title: "Three", scene: "old-classroom", mapXPercent: 53, mapYPercent: 66, npcLine: "Hello" },
       ],
     };
 
