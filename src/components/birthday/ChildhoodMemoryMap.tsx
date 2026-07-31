@@ -645,8 +645,30 @@ export function MapArtwork() {
           <rect x="28" y="66" width="12" height="12" />
           <rect x="76" y="70" width="8" height="8" />
         </pattern>
+        <pattern id="farm-map-grass" width="16" height="16" patternUnits="userSpaceOnUse">
+          <image
+            href="/assets/pixel/farm/grass-fill.png"
+            width="16"
+            height="16"
+            preserveAspectRatio="none"
+          />
+        </pattern>
+        <pattern id="farm-map-dirt" width="16" height="16" patternUnits="userSpaceOnUse">
+          <image
+            href="/assets/pixel/farm/dirt-fill.png"
+            width="16"
+            height="16"
+            preserveAspectRatio="none"
+          />
+        </pattern>
       </defs>
       <rect className="map-art__grass" width="1200" height="760" />
+      <rect
+        className="map-art__grass--farm"
+        width="1200"
+        height="760"
+        style={{ fill: "url(#farm-map-grass)" }}
+      />
       <rect className="map-art__grid" width="1200" height="760" />
       <rect className="map-art__grass-pixels" width="1200" height="760" />
       <polygon className="map-art__meadow map-art__meadow--one" points="0,468 96,420 196,436 302,492 408,472 520,560 650,618 760,576 872,522 1002,446 1200,486 1200,760 0,760" />
@@ -657,7 +679,21 @@ export function MapArtwork() {
 
       <polyline className="map-art__road-shadow" points="168,555 260,448 408,327 518,390 636,502 742,372 864,258 976,374 1056,524" />
       <polyline className="map-art__road" points="168,555 260,448 408,327 518,390 636,502 742,372 864,258 976,374 1056,524" />
+      <polyline
+        className="map-art__farm-road"
+        points="168,555 260,448 408,327 518,390 636,502 742,372 864,258 976,374 1056,524"
+        style={{ stroke: "url(#farm-map-dirt)" }}
+      />
       <polyline className="map-art__road-dash" points="168,555 260,448 408,327 518,390 636,502 742,372 864,258 976,374 1056,524" />
+
+      <rect
+        className="map-art__farm-plot"
+        x="474"
+        y="510"
+        width="124"
+        height="92"
+        style={{ fill: "url(#farm-map-dirt)" }}
+      />
 
       <g className="map-art__mountains">
         <polygon points="24,230 72,166 112,166 160,78 226,230" />

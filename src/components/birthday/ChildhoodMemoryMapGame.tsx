@@ -23,6 +23,7 @@ import type {
 } from "@/lib/birthday/types";
 import type { ApiStatus } from "./types";
 import { initialsFromName } from "./content";
+import { FarmMapDecor, FarmPixelCharacter } from "./FarmPixelAssets";
 import {
   createPixelQuestState,
   isMemoryStationEnabled,
@@ -453,6 +454,7 @@ export function ChildhoodMemoryMapGame({
       >
         <div className="childhood-map__world" style={worldStyle}>
           <MapArtwork />
+          <FarmMapDecor />
           <div className="childhood-map__route" aria-hidden="true" />
           {pixelQuest.zones.map((zone, index) => {
             const enabled = isMemoryStationEnabled(index, completedChapterCount, pixelQuest.zones.length);
@@ -501,7 +503,13 @@ export function ChildhoodMemoryMapGame({
             data-direction={playerDirection}
             aria-hidden="true"
           >
-            <RoyalPixelCharacter initial={initialsFromName(recipientName).slice(0, 1)} />
+            <FarmPixelCharacter
+              archetype={childCharacter.archetype}
+              direction={playerDirection}
+              moving={playerMoving}
+              initial={initialsFromName(recipientName).slice(0, 1)}
+              fallback={<RoyalPixelCharacter initial={initialsFromName(recipientName).slice(0, 1)} />}
+            />
           </div>
         </div>
 

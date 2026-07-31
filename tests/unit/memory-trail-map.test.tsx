@@ -46,6 +46,18 @@ describe("childhood memory map", () => {
     expect(screen.getAllByRole("listitem")).toHaveLength(5);
     expect(screen.getByRole("img", { name: /Minimap/ })).toBeInTheDocument();
     expect(document.querySelector(".childhood-map__objective")).toBeInTheDocument();
+    expect(document.querySelector(".farm-player__sheet")).toHaveAttribute(
+      "src",
+      "/assets/pixel/farm/player-walk.png",
+    );
+    expect(document.querySelector(".farm-map__house")).toHaveAttribute(
+      "src",
+      "/assets/pixel/farm/farm-house.png",
+    );
+    expect(document.querySelector(".farm-map__npc--soldier img")).toHaveAttribute(
+      "src",
+      "/assets/pixel/characters/soldier-idle.png",
+    );
     expect(screen.getByRole("button", { name: /Ngôi nhà tuổi thơ/ })).toBeEnabled();
     expect(screen.getByRole("button", { name: /Sân chơi mùa hè/ })).toBeDisabled();
     expect(document.querySelector(".prompt-line")).not.toBeInTheDocument();

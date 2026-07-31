@@ -1,4 +1,4 @@
-/* Hallmark · macrostructure: Narrative Workflow · tone: playful pixel-art · anchor hue: teal/coral · theme: Hum + 5-station childhood atlas · enrichment: tier-B SVG tile map + royal chibi sprites · nav: N1 · footer: Ft5 · contrast: pass (40-41) · mobile: pass (34, 49-57) · slop: pass (42-48) */
+/* Hallmark · macrostructure: Narrative Workflow · tone: playful pixel-art · anchor hue: teal/coral · theme: Hum + 5-station childhood atlas · enrichment: user-supplied Farm RPG tile/object sprites + Tiny RPG NPCs · nav: N1 · footer: Ft5 · contrast: pass (40-41) · mobile: pass (34, 49-57) · slop: pass (42-48) */
 /* Hallmark · pre-emit critique: P5 H5 E5 S5 R4 V5 */
 @import "../../tokens.css";
 
@@ -4919,6 +4919,215 @@ body .childhood-map__controls {
   .map-art__river-shine,
   .map-art__clouds,
   .childhood-map__discovery {
+    animation: none !important;
+  }
+}
+
+/* Farm RPG asset layer: user-supplied tiles, objects and sprite sheets. */
+.map-art__grass--farm {
+  opacity: 0.94;
+}
+
+.map-art__farm-road {
+  fill: none;
+  stroke-linecap: square;
+  stroke-linejoin: round;
+  stroke-width: 58;
+}
+
+.map-art__farm-plot {
+  stroke: var(--color-map-road-shadow);
+  stroke-width: var(--rule-thick);
+}
+
+.farm-map {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  image-rendering: pixelated;
+}
+
+.farm-map__object,
+.farm-map__crop {
+  position: absolute;
+  display: block;
+  max-width: none;
+  height: auto;
+  image-rendering: pixelated;
+}
+
+.farm-map__object {
+  filter: drop-shadow(var(--space-2xs) var(--space-2xs) 0 var(--color-map-shadow));
+}
+
+.farm-map__house {
+  z-index: 2;
+}
+
+.farm-map__crop {
+  z-index: 3;
+  width: 48px;
+}
+
+.farm-map__sprite-strip {
+  position: absolute;
+  z-index: 4;
+  width: var(--sprite-frame-width);
+  height: var(--sprite-frame-height);
+  overflow: hidden;
+  filter: drop-shadow(var(--space-2xs) var(--space-2xs) 0 var(--color-map-shadow));
+  transform: scale(var(--sprite-scale));
+  transform-origin: 50% 100%;
+}
+
+.farm-map__sprite-strip > img {
+  display: block;
+  width: var(--sprite-sheet-width);
+  max-width: none;
+  height: var(--sprite-sheet-height);
+  image-rendering: pixelated;
+  transform: translate3d(0, 0, 0);
+  animation: farm-strip-idle calc(var(--dur-slow) * 3) steps(var(--sprite-frames)) infinite;
+}
+
+.farm-map__npc {
+  z-index: 5;
+}
+
+.farm-player {
+  --farm-player-row: 0px;
+  --farm-player-scale: 2.5;
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.farm-player[data-direction="up"] {
+  --farm-player-row: -32px;
+}
+
+.farm-player[data-direction="down"] {
+  --farm-player-row: -64px;
+}
+
+.farm-player__sprite-window {
+  position: absolute;
+  z-index: 2;
+  bottom: 0;
+  left: 50%;
+  width: 32px;
+  height: 32px;
+  overflow: hidden;
+  transform: translateX(-50%) scale(var(--farm-player-scale));
+  transform-origin: 50% 100%;
+}
+
+.farm-player[data-direction="left"] .farm-player__sprite-window {
+  transform: translateX(-50%) scale(calc(var(--farm-player-scale) * -1), var(--farm-player-scale));
+}
+
+.farm-player__sheet {
+  display: block;
+  width: 192px;
+  max-width: none;
+  height: 96px;
+  image-rendering: pixelated;
+  transform: translate3d(0, var(--farm-player-row), 0);
+}
+
+.farm-player[data-moving="true"] .farm-player__sheet {
+  animation: farm-player-walk calc(var(--dur-slow) * 1.35) steps(6) infinite;
+}
+
+.farm-player__accessory {
+  position: absolute;
+  z-index: 4;
+  right: 50%;
+  bottom: 77px;
+  display: none;
+  width: 10px;
+  height: 8px;
+  border: var(--rule-thick) solid var(--color-pixel-ink);
+  background: var(--color-map-gold);
+  box-shadow:
+    -11px 4px 0 -2px var(--color-map-gold),
+    11px 4px 0 -2px var(--color-map-gold);
+  transform: translateX(50%);
+}
+
+.farm-player[data-archetype="princess"] .farm-player__accessory,
+.farm-player[data-archetype="prince"] .farm-player__accessory {
+  display: block;
+}
+
+.farm-player[data-archetype="prince"] .farm-player__accessory {
+  bottom: 74px;
+  transform: translateX(50%) scale(0.86);
+}
+
+.farm-player[data-archetype="emperor"] .farm-player__accessory {
+  bottom: 72px;
+  display: block;
+  width: 36px;
+  height: 10px;
+  background: var(--color-pixel-teal-bright);
+  box-shadow: 0 -8px 0 -2px var(--color-map-gold);
+}
+
+.farm-player[data-archetype="knight"] .farm-player__accessory {
+  bottom: 67px;
+  display: block;
+  width: 34px;
+  height: 28px;
+  border-color: var(--color-pixel-cream);
+  background: var(--color-cyan);
+  box-shadow: none;
+  opacity: 0.72;
+}
+
+.farm-player__initial {
+  position: absolute;
+  z-index: 5;
+  top: 0;
+  left: 50%;
+  display: grid;
+  min-width: 26px;
+  min-height: 22px;
+  place-items: center;
+  border: var(--rule-thick) solid var(--color-pixel-cream);
+  background: var(--color-pixel-deep);
+  color: var(--color-pixel-cream);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 900;
+  line-height: 1;
+  transform: translateX(-50%);
+}
+
+@media (min-width: 40rem) {
+  .farm-player {
+    --farm-player-scale: 3.2;
+  }
+}
+
+@keyframes farm-player-walk {
+  to {
+    transform: translate3d(-192px, var(--farm-player-row), 0);
+  }
+}
+
+@keyframes farm-strip-idle {
+  to {
+    transform: translate3d(calc(var(--sprite-sheet-width) * -1), 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .farm-player[data-moving="true"] .farm-player__sheet,
+  .farm-map__sprite-strip > img {
     animation: none !important;
   }
 }

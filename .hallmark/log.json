@@ -3,6 +3,13 @@
     "date": "2026-07-31",
     "macrostructure": "Narrative Workflow",
     "theme": "Hum",
+    "enrichment": "User-supplied Farm RPG tiles, top-down player sprite and Tiny RPG Soldier/Orc map guides",
+    "brief": "Farm map and character asset integration for the five-station childhood memory journey"
+  },
+  {
+    "date": "2026-07-31",
+    "macrostructure": "Narrative Workflow",
+    "theme": "Hum",
     "enrichment": "Tier-B camera-follow pixel world with collision, tutorial, pause and memory scenes",
     "brief": "Complete-game upgrade for the five-station royal childhood memory map"
   },
