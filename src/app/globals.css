@@ -2954,6 +2954,10 @@ body .childhood-map__character {
   z-index: 8;
   width: 92px;
   height: 126px;
+  /* Keep the sprite floating over the map; the accent belongs to the HUD, not its hitbox. */
+  background: transparent;
+  border: 0;
+  box-shadow: none;
   transform: translate(-50%, -78%);
   pointer-events: none;
   transition: left var(--dur-micro) linear, top var(--dur-micro) linear;
