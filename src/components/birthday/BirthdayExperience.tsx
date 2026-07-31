@@ -4,6 +4,7 @@ import { CSSProperties, FormEvent, KeyboardEvent, useCallback, useEffect, useRed
 import Image from "next/image";
 import Link from "next/link";
 import QRCode from "qrcode";
+import { DEFAULT_PIXEL_QUEST } from "@/lib/birthday/dto";
 import {
   AlertCircle,
   Check,
@@ -156,7 +157,7 @@ function getVoucherQrValue(voucher: CompleteSessionResult["voucher"]) {
 
 export function PixelMemoryQuest({
   images,
-  pixelQuest,
+  pixelQuest = DEFAULT_PIXEL_QUEST,
   recipientName,
   childCharacter,
   accent,
@@ -165,7 +166,7 @@ export function PixelMemoryQuest({
   chapterId,
 }: {
   images: PublicMemoryImageDTO[];
-  pixelQuest: PublicPixelQuestConfigDTO;
+  pixelQuest?: PublicPixelQuestConfigDTO;
   recipientName: string;
   childCharacter: PublicChildCharacterDTO;
   accent: "pear" | "cyan" | "coral";

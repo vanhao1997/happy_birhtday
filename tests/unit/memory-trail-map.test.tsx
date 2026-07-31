@@ -27,6 +27,26 @@ function InteractiveMemoryTrail() {
 }
 
 describe("pixel memory quest", () => {
+  it("uses the default quest for legacy sessions without pixel quest data", () => {
+    render(
+      <PixelMemoryQuest
+        images={[]}
+        recipientName="Mai"
+        childCharacter={{
+          name: "Bé Mai Mây",
+          trait: "Tò mò, thích khám phá",
+          archetype: "princess",
+        }}
+        accent="pear"
+        sessionId="legacy-session-mai"
+        chapterId="legacy-chapter"
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /Làng tuổi thơ/ })).toBeEnabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Hành trình bắt đầu");
+  });
+
   it("moves through the first checkpoint with keyboard controls", () => {
     render(<InteractiveMemoryTrail />);
 
