@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 import Image from "next/image";
-import { Check, Gift, Loader2, LockKeyhole, MapPin, RotateCcw } from "lucide-react";
+import { Check, Loader2, LockKeyhole, MapPin, RotateCcw } from "lucide-react";
 import { DEFAULT_PIXEL_QUEST } from "@/lib/birthday/dto";
 import type {
   PixelCharacterArchetype,
@@ -47,6 +47,59 @@ type ChildhoodMemoryMapProps = {
   ) => Promise<void> | void;
 };
 
+type PlayerDirection = "up" | "down" | "left" | "right";
+
+type PlayerPosition = {
+  x: number;
+  y: number;
+};
+
+const PLAYER_STEP_PERCENT = 2.25;
+const STATION_INTERACTION_RADIUS = 8.5;
+const PLAYER_BOUNDS = {
+  minX: 4,
+  maxX: 96,
+  minY: 12,
+  maxY: 94,
+};
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function isPlayerPosition(value: unknown): value is PlayerPosition {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const position = value as Record<string, unknown>;
+  return typeof position.x === "number"
+    && Number.isFinite(position.x)
+    && typeof position.y === "number"
+    && Number.isFinite(position.y);
+}
+
+function stationDistance(position: PlayerPosition, zone: PublicPixelQuestZoneDTO) {
+  const deltaX = position.x - zone.mapXPercent;
+  const deltaY = (position.y - zone.mapYPercent) * 1.3;
+  return Math.hypot(deltaX, deltaY);
+}
+
+function nearestStationIndex(
+  position: PlayerPosition,
+  zones: PublicPixelQuestZoneDTO[],
+) {
+  let nearestIndex = -1;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+
+  zones.forEach((zone, index) => {
+    const distance = stationDistance(position, zone);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestIndex = index;
+    }
+  });
+
+  return nearestDistance <= STATION_INTERACTION_RADIUS ? nearestIndex : -1;
+}
+
 const CHARACTER_LABELS: Record<PixelCharacterArchetype, string> = {
   princess: "Công chúa nhí",
   prince: "Hoàng tử nhí",
@@ -69,15 +122,41 @@ export function ChildhoodMemoryMap({
 }: ChildhoodMemoryMapProps) {
   const frames = Array.from({ length: 5 }, (_, index) => images[index] ?? null);
   const journeyId = sessionId || `local-${recipientName}`;
+  const progressStorageKey = `happybirthday.memoryMap.${journeyId}`;
+  const positionStorageKey = `happybirthday.memoryMapPosition.${journeyId}`;
   const [questState, dispatchQuest] = useReducer(
     pixelQuestReducer,
     undefined,
     () => createPixelQuestState(journeyId, pixelQuest),
   );
-  const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
+  const firstZone = pixelQuest.zones[0] ?? DEFAULT_PIXEL_QUEST.zones[0]!;
+  const [playerPosition, setPlayerPosition] = useState<PlayerPosition>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const raw = window.localStorage.getItem(positionStorageKey);
+        const storedPosition = raw ? JSON.parse(raw) as unknown : null;
+        if (isPlayerPosition(storedPosition)) {
+          return {
+            x: clamp(storedPosition.x, PLAYER_BOUNDS.minX, PLAYER_BOUNDS.maxX),
+            y: clamp(storedPosition.y, PLAYER_BOUNDS.minY, PLAYER_BOUNDS.maxY),
+          };
+        }
+      } catch {
+        window.localStorage.removeItem(positionStorageKey);
+      }
+    }
+
+    return {
+      x: clamp(firstZone.mapXPercent + 4, PLAYER_BOUNDS.minX, PLAYER_BOUNDS.maxX),
+      y: clamp(firstZone.mapYPercent + 5, PLAYER_BOUNDS.minY, PLAYER_BOUNDS.maxY),
+    };
+  });
+  const [playerDirection, setPlayerDirection] = useState<PlayerDirection>("down");
+  const [playerMoving, setPlayerMoving] = useState(false);
   const mapRef = useRef<HTMLDivElement | null>(null);
   const stationRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const progressStorageKey = `happybirthday.memoryMap.${journeyId}`;
+  const moveIntervalRef = useRef<number | null>(null);
+  const movementStopRef = useRef<number | null>(null);
   const maximumIndex = maximumReachableStationIndex(
     completedChapterCount,
     pixelQuest.zones.length,
@@ -94,19 +173,13 @@ export function ChildhoodMemoryMap({
     voucherRevealed,
   );
   const activeLoading = status === "loading" && !activeVisited;
-  const stationX = mapSize.width * (activeZone?.mapXPercent ?? 14) / 100;
-  const characterOffset = mapSize.width > 0
-    ? Math.min(78, Math.max(56, mapSize.width * 0.085))
-    : 0;
-  const characterDirection = activeIndex < 3 ? 1 : -1;
-  const characterEdge = mapSize.width < 400 ? 36 : 48;
-  const characterX = mapSize.width > 0
-    ? Math.min(
-        mapSize.width - characterEdge,
-        Math.max(characterEdge, stationX + characterOffset * characterDirection),
-      )
-    : 0;
-  const characterY = mapSize.height * (activeZone?.mapYPercent ?? 73) / 100;
+  const nearbyIndex = nearestStationIndex(playerPosition, pixelQuest.zones);
+  const nearbyZone = nearbyIndex >= 0 ? pixelQuest.zones[nearbyIndex] : null;
+  const nearbyEnabled = nearbyIndex >= 0 && isMemoryStationEnabled(
+    nearbyIndex,
+    completedChapterCount,
+    pixelQuest.zones.length,
+  );
 
   useEffect(() => {
     try {
@@ -140,20 +213,16 @@ export function ChildhoodMemoryMap({
   }, [progressStorageKey, questState]);
 
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
+    window.localStorage.setItem(positionStorageKey, JSON.stringify(playerPosition));
+  }, [playerPosition, positionStorageKey]);
 
-    const updateSize = () => {
-      const bounds = map.getBoundingClientRect();
-      setMapSize({ width: bounds.width, height: bounds.height });
-    };
-
-    updateSize();
-    if (typeof ResizeObserver === "undefined") return;
-
-    const observer = new ResizeObserver(updateSize);
-    observer.observe(map);
-    return () => observer.disconnect();
+  useEffect(() => () => {
+    if (moveIntervalRef.current !== null) {
+      window.clearInterval(moveIntervalRef.current);
+    }
+    if (movementStopRef.current !== null) {
+      window.clearTimeout(movementStopRef.current);
+    }
   }, []);
 
   function selectStation(index: number, shouldOpen: boolean) {
@@ -185,33 +254,103 @@ export function ChildhoodMemoryMap({
     }
   }
 
+  function markPlayerMoving() {
+    setPlayerMoving(true);
+    if (movementStopRef.current !== null) {
+      window.clearTimeout(movementStopRef.current);
+    }
+    movementStopRef.current = window.setTimeout(() => {
+      setPlayerMoving(false);
+      movementStopRef.current = null;
+    }, 180);
+  }
+
+  function movePlayer(direction: PlayerDirection) {
+    const delta = {
+      up: { x: 0, y: -PLAYER_STEP_PERCENT },
+      down: { x: 0, y: PLAYER_STEP_PERCENT },
+      left: { x: -PLAYER_STEP_PERCENT, y: 0 },
+      right: { x: PLAYER_STEP_PERCENT, y: 0 },
+    }[direction];
+
+    setPlayerDirection(direction);
+    markPlayerMoving();
+    setPlayerPosition((current) => ({
+      x: clamp(current.x + delta.x, PLAYER_BOUNDS.minX, PLAYER_BOUNDS.maxX),
+      y: clamp(current.y + delta.y, PLAYER_BOUNDS.minY, PLAYER_BOUNDS.maxY),
+    }));
+  }
+
+  function stopContinuousMove() {
+    if (moveIntervalRef.current !== null) {
+      window.clearInterval(moveIntervalRef.current);
+      moveIntervalRef.current = null;
+    }
+    setPlayerMoving(false);
+  }
+
+  function startContinuousMove(direction: PlayerDirection) {
+    stopContinuousMove();
+    movePlayer(direction);
+    moveIntervalRef.current = window.setInterval(() => movePlayer(direction), 100);
+  }
+
+  function interactWithNearbyStation() {
+    if (nearbyIndex < 0 || !nearbyEnabled || status === "loading") return;
+    selectStation(nearbyIndex, true);
+  }
+
+  function travelToStation(index: number, shouldOpen: boolean) {
+    const zone = pixelQuest.zones[index];
+    if (!zone) return;
+
+    setPlayerDirection(zone.mapXPercent < playerPosition.x ? "left" : "right");
+    markPlayerMoving();
+    setPlayerPosition({
+      x: clamp(zone.mapXPercent + (index < 3 ? 4 : -4), PLAYER_BOUNDS.minX, PLAYER_BOUNDS.maxX),
+      y: clamp(zone.mapYPercent + 5, PLAYER_BOUNDS.minY, PLAYER_BOUNDS.maxY),
+    });
+    selectStation(index, shouldOpen);
+  }
+
   function handleMapKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if ((event.target as HTMLElement).tagName === "BUTTON") return;
 
-    let nextIndex = activeIndex;
-    if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-      nextIndex = Math.max(0, activeIndex - 1);
-    } else if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-      nextIndex = Math.min(maximumIndex, activeIndex + 1);
-    } else if (event.key === "Home") {
-      nextIndex = 0;
-    } else if (event.key === "End") {
-      nextIndex = maximumIndex;
-    } else {
+    const key = event.key.toLowerCase();
+    const direction = key === "arrowup" || key === "w"
+      ? "up"
+      : key === "arrowdown" || key === "s"
+        ? "down"
+        : key === "arrowleft" || key === "a"
+          ? "left"
+          : key === "arrowright" || key === "d"
+            ? "right"
+            : null;
+
+    if (direction) {
+      event.preventDefault();
+      movePlayer(direction);
       return;
     }
 
-    event.preventDefault();
-    selectStation(nextIndex, false);
-    stationRefs.current[nextIndex]?.focus({ preventScroll: true });
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      interactWithNearbyStation();
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      travelToStation(0, false);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      travelToStation(maximumIndex, false);
+    }
   }
 
   const mapStyle = {
     "--map-ratio": `${pixelQuest.mapWidthPx} / ${pixelQuest.mapHeightPx}`,
   } as CSSProperties;
   const characterStyle = {
-    "--character-x": `${characterX}px`,
-    "--character-y": `${characterY}px`,
+    "--character-x": `${playerPosition.x}%`,
+    "--character-y": `${playerPosition.y}%`,
   } as CSSProperties;
 
   return (
@@ -235,7 +374,7 @@ export function ChildhoodMemoryMap({
         className="childhood-map__viewport"
         style={mapStyle}
         role="group"
-        aria-label={`Bản đồ ký ức của ${recipientName}. Dùng Tab để chọn trạm hoặc phím mũi tên để di chuyển giữa các trạm đã mở.`}
+        aria-label={`Bản đồ ký ức của ${recipientName}. Dùng WASD hoặc phím mũi tên để di chuyển. Nhấn Enter khi tới gần một trạm.`}
         tabIndex={0}
         onKeyDown={handleMapKeyDown}
       >
@@ -267,6 +406,7 @@ export function ChildhoodMemoryMap({
               style={stationStyle}
               data-scene={zone.scene}
               data-active={active}
+              data-nearby={index === nearbyIndex}
               data-visited={visited}
               data-enabled={enabled}
               key={zone.id}
@@ -274,10 +414,14 @@ export function ChildhoodMemoryMap({
               aria-pressed={active}
               aria-busy={active && activeLoading}
               disabled={!enabled || status === "loading"}
-              onClick={() => selectStation(index, true)}
+              onClick={() => travelToStation(index, true)}
             >
-              <span className="childhood-map__station-marker" aria-hidden="true">
-                {visited ? <Check size={18} /> : index === 4 ? <Gift size={18} /> : <MapPin size={18} />}
+              <span
+                className="childhood-map__station-marker"
+                data-kind={visited ? "visited" : index === 4 ? "gift" : "memory"}
+                aria-hidden="true"
+              >
+                <span className="childhood-map__station-pixel-icon" />
               </span>
               <span className="childhood-map__station-label" aria-hidden="true">
                 <small>0{index + 1}</small>
@@ -290,7 +434,9 @@ export function ChildhoodMemoryMap({
         <div
           className={`childhood-map__character tone-${accent} archetype-${childCharacter.archetype}`}
           style={characterStyle}
-          data-ready={mapSize.width > 0}
+          data-ready={questState.hydrated}
+          data-moving={playerMoving}
+          data-direction={playerDirection}
           aria-hidden="true"
         >
           <RoyalPixelCharacter
@@ -298,11 +444,72 @@ export function ChildhoodMemoryMap({
           />
         </div>
 
+        <div
+          className="childhood-map__proximity"
+          data-visible={nearbyZone !== null}
+          data-locked={nearbyZone !== null && !nearbyEnabled}
+          role="status"
+          aria-live="polite"
+        >
+          {nearbyZone ? (
+            <>
+              <span>{nearbyEnabled ? "ENTER" : "LOCK"}</span>
+              <strong>{nearbyEnabled ? `Khám phá ${nearbyZone.title}` : "Mở sau trạm trước"}</strong>
+            </>
+          ) : (
+            <strong>Đi tới biểu tượng trạm ký ức</strong>
+          )}
+        </div>
+
         <div className="childhood-map__hud" aria-hidden="true">
           <span>MAP 08</span>
           <span>MEM {Math.min(completedChapterCount, 4)}/4</span>
-          <span>{voucherRevealed ? "GIFT OPEN" : "NO FAIL"}</span>
+          <span>{voucherRevealed ? "GIFT OPEN" : nearbyZone ? `NEAR ${String(nearbyIndex + 1).padStart(2, "0")}` : "EXPLORE"}</span>
         </div>
+      </div>
+
+      <div className="childhood-map__controls" aria-label="Điều khiển nhân vật">
+        <div className="childhood-map__dpad">
+          {(["up", "left", "down", "right"] as const).map((direction) => (
+            <button
+              key={direction}
+              type="button"
+              className={`childhood-map__move childhood-map__move--${direction}`}
+              aria-label={`Di chuyển ${direction === "up" ? "lên" : direction === "down" ? "xuống" : direction === "left" ? "trái" : "phải"}`}
+              data-direction={direction}
+              onPointerDown={() => startContinuousMove(direction)}
+              onPointerUp={stopContinuousMove}
+              onPointerCancel={stopContinuousMove}
+              onPointerLeave={stopContinuousMove}
+              onClick={(event) => event.preventDefault()}
+            >
+              <span aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+        <div className="childhood-map__control-copy">
+          <span>WASD / ARROWS</span>
+          <strong>Di chuyển tự do trên bản đồ</strong>
+          <small>Tới gần trạm rồi nhấn Enter hoặc nút Khám phá.</small>
+        </div>
+        <button
+          type="button"
+          className="childhood-map__interact"
+          data-state={status === "loading"
+            ? "loading"
+            : status === "error"
+              ? "error"
+              : nearbyIndex === activeIndex && activeVisited
+                ? "success"
+                : nearbyEnabled
+                  ? "ready"
+                  : "disabled"}
+          disabled={!nearbyEnabled || status === "loading"}
+          onClick={interactWithNearbyStation}
+        >
+          <span>{status === "loading" ? "Đang mở..." : "Khám phá"}</span>
+          <kbd>Enter</kbd>
+        </button>
       </div>
 
       <div className="childhood-map__details" data-scene={activeZone.scene}>
@@ -394,106 +601,166 @@ export function ChildhoodMemoryMap({
   );
 }
 
+const MAP_PIXEL_TREES = [
+  [66, 318, "deep"],
+  [110, 360, "light"],
+  [162, 316, "deep"],
+  [214, 354, "light"],
+  [268, 300, "deep"],
+  [882, 494, "deep"],
+  [930, 454, "light"],
+  [976, 490, "deep"],
+  [1108, 350, "light"],
+  [1152, 392, "deep"],
+] as const;
+
+const MAP_PIXEL_FLOWERS = [
+  [284, 592],
+  [312, 616],
+  [350, 570],
+  [752, 598],
+  [782, 620],
+  [836, 666],
+  [1096, 686],
+  [1130, 674],
+] as const;
+
 function MapArtwork() {
   return (
     <svg
       className="childhood-map__art"
       viewBox="0 0 1200 760"
       preserveAspectRatio="none"
+      shapeRendering="crispEdges"
       aria-hidden="true"
     >
+      <defs>
+        <pattern id="memory-map-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+          <rect width="40" height="40" />
+          <path d="M40 0H0V40" />
+        </pattern>
+        <pattern id="memory-map-grass-pixels" width="96" height="96" patternUnits="userSpaceOnUse">
+          <rect x="10" y="12" width="10" height="10" />
+          <rect x="54" y="28" width="8" height="8" />
+          <rect x="28" y="66" width="12" height="12" />
+          <rect x="76" y="70" width="8" height="8" />
+        </pattern>
+      </defs>
       <rect className="map-art__grass" width="1200" height="760" />
-      <path className="map-art__meadow map-art__meadow--one" d="M0 450C160 390 278 420 390 520S640 674 805 590 1040 430 1200 492V760H0Z" />
-      <path className="map-art__meadow map-art__meadow--two" d="M0 0H1200V182C1034 142 936 214 796 180S502 88 334 174 112 276 0 230Z" />
-      <path className="map-art__river" d="M448-20C426 116 548 182 516 308S370 466 424 596 596 706 610 800" />
-      <path className="map-art__river-shine" d="M463-20C442 114 563 184 531 312S388 470 442 594 612 704 626 800" />
-      <path className="map-art__road-shadow" d="M160 590C224 474 328 346 438 340S600 548 718 422 882 302 1048 564" />
-      <path className="map-art__road" d="M160 590C224 474 328 346 438 340S600 548 718 422 882 302 1048 564" />
-      <path className="map-art__road-dash" d="M160 590C224 474 328 346 438 340S600 548 718 422 882 302 1048 564" />
+      <rect className="map-art__grid" width="1200" height="760" />
+      <rect className="map-art__grass-pixels" width="1200" height="760" />
+      <polygon className="map-art__meadow map-art__meadow--one" points="0,468 96,420 196,436 302,492 408,472 520,560 650,618 760,576 872,522 1002,446 1200,486 1200,760 0,760" />
+      <polygon className="map-art__meadow map-art__meadow--two" points="0,0 1200,0 1200,174 1086,150 970,186 840,162 716,112 592,142 460,96 332,174 204,226 82,206 0,244" />
+
+      <polyline className="map-art__river" points="470,-20 448,88 504,164 526,252 498,340 432,424 408,512 456,612 564,692 592,800" />
+      <polyline className="map-art__river-shine" points="496,4 476,92 532,174 548,252 520,340 456,430 436,512 480,598 584,676 612,790" />
+
+      <polyline className="map-art__road-shadow" points="168,555 260,448 408,327 518,390 636,502 742,372 864,258 976,374 1056,524" />
+      <polyline className="map-art__road" points="168,555 260,448 408,327 518,390 636,502 742,372 864,258 976,374 1056,524" />
+      <polyline className="map-art__road-dash" points="168,555 260,448 408,327 518,390 636,502 742,372 864,258 976,374 1056,524" />
 
       <g className="map-art__mountains">
-        <path d="M20 230 128 72 236 230Z" />
-        <path d="M132 230 258 38 382 230Z" />
-        <path d="M272 230 356 106 452 230Z" />
-        <path className="map-art__snow" d="m226 88 32-50 34 52-18-7-17 18-15-18Z" />
+        <polygon points="24,230 72,166 112,166 160,78 226,230" />
+        <polygon points="140,230 210,128 248,128 304,40 382,230" />
+        <polygon points="286,230 330,170 364,170 418,106 464,230" />
+        <polygon className="map-art__snow" points="242,88 258,44 292,90 274,86 258,106" />
       </g>
 
       <g className="map-art__clouds">
-        <path d="M618 92c18-34 72-29 82 8 42-12 70 46 31 68H612c-42-18-34-70 6-76Z" />
-        <path d="M930 122c16-30 62-24 72 8 38-10 61 42 26 61H918c-36-18-25-61 12-69Z" />
+        <g transform="translate(610 92)">
+          <rect x="0" y="28" width="126" height="34" />
+          <rect x="22" y="8" width="46" height="54" />
+          <rect x="68" y="18" width="54" height="44" />
+        </g>
+        <g transform="translate(920 126)">
+          <rect x="0" y="22" width="112" height="30" />
+          <rect x="20" y="0" width="42" height="52" />
+          <rect x="62" y="12" width="46" height="40" />
+        </g>
       </g>
 
       <g className="map-art__forest map-art__forest--left">
-        {[[72, 330], [116, 360], [168, 318], [220, 356], [264, 302]].map(([x, y]) => (
-          <g transform={`translate(${x} ${y})`} key={`${x}-${y}`}>
-            <rect x="-7" y="34" width="14" height="28" />
-            <path d="M0-12-34 42h68Z" />
-            <path d="M0 8-30 54h60Z" />
-          </g>
-        ))}
-      </g>
-      <g className="map-art__forest map-art__forest--right">
-        {[[884, 494], [930, 454], [974, 488], [1110, 350], [1150, 392]].map(([x, y]) => (
-          <g transform={`translate(${x} ${y})`} key={`${x}-${y}`}>
-            <rect x="-7" y="34" width="14" height="28" />
-            <path d="M0-12-34 42h68Z" />
-            <path d="M0 8-30 54h60Z" />
+        {MAP_PIXEL_TREES.map(([x, y, tone]) => (
+          <g className={`map-art__tree map-art__tree--${tone}`} transform={`translate(${x} ${y})`} key={`${x}-${y}`}>
+            <rect x="-7" y="40" width="14" height="34" />
+            <rect x="-27" y="18" width="54" height="24" />
+            <rect x="-19" y="-4" width="38" height="24" />
+            <rect x="-11" y="-22" width="22" height="22" />
           </g>
         ))}
       </g>
 
       <g className="map-art__home" transform="translate(92 520)">
-        <path d="M0 58 72 0l76 58Z" />
-        <rect x="18" y="54" width="114" height="88" />
-        <rect className="map-art__door" x="62" y="88" width="30" height="54" />
-        <rect className="map-art__window" x="30" y="76" width="24" height="25" />
-        <rect className="map-art__window" x="101" y="76" width="20" height="25" />
-        <path className="map-art__smoke" d="M120 16c22-20-8-30 14-51" />
+        <rect className="map-art__home-shadow" x="6" y="132" width="152" height="18" />
+        <polygon className="map-art__roof" points="0,58 24,58 24,34 48,34 48,14 78,14 78,34 104,34 104,58 150,58 150,78 0,78" />
+        <rect className="map-art__wall" x="18" y="76" width="114" height="66" />
+        <rect className="map-art__door" x="62" y="100" width="30" height="42" />
+        <rect className="map-art__window" x="32" y="90" width="22" height="22" />
+        <rect className="map-art__window" x="100" y="90" width="22" height="22" />
+        <rect className="map-art__chimney" x="116" y="26" width="18" height="28" />
+        <rect className="map-art__smoke" x="132" y="-6" width="18" height="12" />
+        <rect className="map-art__smoke" x="150" y="-22" width="24" height="12" />
       </g>
 
       <g className="map-art__playground" transform="translate(326 246)">
-        <path className="map-art__slide" d="M0 102 40 10h44L34 102Z" />
-        <path className="map-art__swing" d="M96 104 128 8l38 96M112 48h40M122 48v42M145 48v42" />
+        <polygon className="map-art__slide" points="8,104 48,12 92,12 46,104" />
+        <polyline className="map-art__swing" points="102,104 132,8 170,104" />
+        <line className="map-art__swing" x1="116" y1="48" x2="156" y2="48" />
+        <line className="map-art__swing" x1="126" y1="48" x2="126" y2="90" />
+        <line className="map-art__swing" x1="148" y1="48" x2="148" y2="90" />
         <rect x="116" y="88" width="14" height="8" />
         <rect x="139" y="88" width="14" height="8" />
-        <circle className="map-art__ball" cx="72" cy="116" r="18" />
+        <rect className="map-art__ball" x="62" y="108" width="28" height="28" />
+        <rect className="map-art__ball-shine" x="70" y="112" width="8" height="8" />
       </g>
 
       <g className="map-art__school" transform="translate(554 446)">
-        <path d="M0 64 104 4l108 60Z" />
-        <rect x="16" y="60" width="180" height="112" />
+        <rect className="map-art__school-shadow" x="8" y="160" width="208" height="18" />
+        <polygon className="map-art__roof" points="0,64 32,64 32,44 74,44 74,24 108,24 108,44 150,44 150,64 212,64 212,86 0,86" />
+        <rect className="map-art__wall" x="16" y="84" width="180" height="88" />
         <rect className="map-art__door" x="86" y="108" width="38" height="64" />
         <rect className="map-art__window" x="38" y="88" width="30" height="28" />
         <rect className="map-art__window" x="144" y="88" width="30" height="28" />
         <rect x="94" y="-26" width="18" height="42" />
-        <path className="map-art__flag" d="M112-24h54l-14 18 14 18h-54Z" />
+        <polygon className="map-art__flag" points="112,-24 166,-24 152,-6 166,12 112,12" />
       </g>
 
       <g className="map-art__dream" transform="translate(786 156)">
-        <path className="map-art__balloon" d="M48 0c54 0 74 58 28 108L56 130 34 108C-12 58-6 0 48 0Z" />
-        <path className="map-art__balloon-line" d="M28 96 42 142M70 96 56 142" />
+        <polygon className="map-art__balloon" points="48,0 88,16 104,56 86,98 58,130 38,130 10,98 -6,56 8,16" />
+        <line className="map-art__balloon-line" x1="28" y1="96" x2="42" y2="142" />
+        <line className="map-art__balloon-line" x1="70" y1="96" x2="56" y2="142" />
         <rect className="map-art__basket" x="40" y="140" width="20" height="18" />
-        <path className="map-art__stars" d="m142 14 8 16 18 3-13 13 3 18-16-8-16 8 3-18-13-13 18-3ZM194 86l5 10 12 2-9 8 2 12-10-6-10 6 2-12-9-8 12-2Z" />
+        <polygon className="map-art__stars" points="150,14 160,34 180,34 164,48 170,68 150,58 130,68 136,48 120,34 140,34" />
+        <polygon className="map-art__stars" points="196,86 202,98 216,98 206,108 210,122 196,116 184,122 188,108 178,98 190,98" />
       </g>
 
       <g className="map-art__gate" transform="translate(1000 466)">
-        <path d="M0 150V36L28 8l28 28v114ZM106 150V36l28-28 28 28v114Z" />
-        <path d="M42 150V68c0-36 64-36 64 0v82Z" />
+        <rect className="map-art__gate-shadow" x="-8" y="144" width="178" height="18" />
+        <polygon points="0,150 0,42 18,42 18,24 32,24 32,8 56,32 56,150" />
+        <polygon points="106,150 106,32 130,8 130,24 146,24 146,42 162,42 162,150" />
+        <polygon points="42,150 42,68 52,52 70,42 92,52 106,68 106,150" />
         <rect className="map-art__gate-door" x="55" y="82" width="38" height="68" />
-        <path className="map-art__banner" d="M58 18h48v38L82 44 58 56Z" />
+        <polygon className="map-art__banner" points="58,18 106,18 106,56 82,44 58,56" />
       </g>
 
       <g className="map-art__bridge" transform="translate(406 424)">
-        <path d="M0 40Q54-10 108 40v28H0Z" />
-        <path d="M10 42Q54 7 98 42" />
+        <polygon points="0,44 18,22 36,12 72,12 90,22 108,44 108,68 0,68" />
+        <polyline points="12,44 36,26 72,26 96,44" />
       </g>
 
       <g className="map-art__details">
-        <circle cx="292" cy="592" r="8" />
-        <circle cx="314" cy="614" r="5" />
-        <circle cx="752" cy="598" r="7" />
-        <circle cx="782" cy="618" r="5" />
-        <path d="M242 674q18-28 36 0M820 666q20-32 42 0M1096 684q17-27 34 0" />
+        {MAP_PIXEL_FLOWERS.map(([x, y]) => (
+          <g className="map-art__flower" transform={`translate(${x} ${y})`} key={`${x}-${y}`}>
+            <rect x="-4" y="-12" width="8" height="8" />
+            <rect x="-12" y="-4" width="8" height="8" />
+            <rect x="4" y="-4" width="8" height="8" />
+            <rect x="-4" y="4" width="8" height="8" />
+            <rect x="-2" y="-2" width="4" height="4" />
+          </g>
+        ))}
+        <polyline className="map-art__grass-cut" points="242,674 258,650 276,674" />
+        <polyline className="map-art__grass-cut" points="820,666 840,638 862,666" />
+        <polyline className="map-art__grass-cut" points="1096,684 1112,660 1130,684" />
       </g>
     </svg>
   );
@@ -501,28 +768,84 @@ function MapArtwork() {
 
 function RoyalPixelCharacter({ initial }: { initial: string }) {
   return (
-    <svg className="royal-pixel" viewBox="0 0 96 132" shapeRendering="crispEdges">
-      <ellipse className="royal-pixel__shadow" cx="48" cy="124" rx="31" ry="7" />
-      <path className="royal-pixel__cape" d="M20 56h56l12 62H8Z" />
-      <rect className="royal-pixel__leg" x="27" y="96" width="17" height="22" />
-      <rect className="royal-pixel__leg" x="52" y="96" width="17" height="22" />
-      <rect className="royal-pixel__boot" x="20" y="114" width="27" height="10" />
-      <rect className="royal-pixel__boot" x="49" y="114" width="27" height="10" />
-      <path className="royal-pixel__body" d="M24 54h48l8 48H16Z" />
-      <rect className="royal-pixel__arm" x="8" y="62" width="16" height="35" />
-      <rect className="royal-pixel__arm" x="72" y="62" width="16" height="35" />
-      <rect className="royal-pixel__hand" x="9" y="93" width="14" height="12" />
-      <rect className="royal-pixel__hand" x="73" y="93" width="14" height="12" />
-      <rect className="royal-pixel__face" x="25" y="24" width="46" height="38" />
-      <path className="royal-pixel__hair" d="M20 48V18h12V8h32v8h12v36H66V30H30v18Z" />
-      <rect className="royal-pixel__eye" x="34" y="38" width="6" height="6" />
-      <rect className="royal-pixel__eye" x="56" y="38" width="6" height="6" />
-      <path className="royal-pixel__crown royal-pixel__crown--royal" d="M23 24V5l12 9L48 0l13 14 12-9v19Z" />
-      <path className="royal-pixel__helmet" d="M18 38V12h60v26H64V26H32v12Z" />
-      <path className="royal-pixel__shield" d="M70 72h24v30c0 14-12 22-12 22s-12-8-12-22Z" />
-      <path className="royal-pixel__scepter" d="M84 48h5v50h-5ZM78 42h17v10H78Z" />
-      <text className="royal-pixel__initial" x="48" y="88" textAnchor="middle">{initial}</text>
-      <path className="royal-pixel__spark" d="m4 32 4 8 8 4-8 4-4 8-4-8-8-4 8-4ZM88 14l3 6 6 3-6 3-3 6-3-6-6-3 6-3Z" />
+    <svg className="royal-pixel" viewBox="0 0 64 92" shapeRendering="crispEdges">
+      <rect className="royal-pixel__shadow" x="18" y="84" width="30" height="5" />
+      <rect className="royal-pixel__shadow royal-pixel__shadow--soft" x="24" y="89" width="18" height="3" />
+
+      <g className="royal-pixel__cape">
+        <rect x="12" y="36" width="40" height="42" />
+        <rect x="8" y="46" width="8" height="28" />
+        <rect x="48" y="46" width="8" height="28" />
+      </g>
+
+      <rect className="royal-pixel__leg royal-pixel__leg--left" x="21" y="66" width="9" height="15" />
+      <rect className="royal-pixel__leg royal-pixel__leg--right" x="34" y="66" width="9" height="15" />
+      <rect className="royal-pixel__boot royal-pixel__boot--left" x="16" y="78" width="14" height="6" />
+      <rect className="royal-pixel__boot royal-pixel__boot--right" x="34" y="78" width="14" height="6" />
+
+      <g className="royal-pixel__robe">
+        <rect className="royal-pixel__arm royal-pixel__arm--left" x="8" y="40" width="10" height="22" />
+        <rect className="royal-pixel__arm royal-pixel__arm--right" x="46" y="40" width="10" height="22" />
+        <rect className="royal-pixel__body" x="18" y="34" width="28" height="38" />
+        <rect className="royal-pixel__trim" x="28" y="38" width="8" height="31" />
+        <rect className="royal-pixel__trim" x="22" y="42" width="4" height="22" />
+        <rect className="royal-pixel__trim" x="38" y="42" width="4" height="22" />
+        <rect className="royal-pixel__hand royal-pixel__hand--left" x="8" y="60" width="10" height="8" />
+        <rect className="royal-pixel__hand royal-pixel__hand--right" x="46" y="60" width="10" height="8" />
+      </g>
+
+      <g className="royal-pixel__head">
+        <rect className="royal-pixel__hair" x="18" y="15" width="28" height="24" />
+        <rect className="royal-pixel__face" x="20" y="20" width="24" height="22" />
+        <rect className="royal-pixel__ear" x="16" y="28" width="4" height="8" />
+        <rect className="royal-pixel__ear" x="44" y="28" width="4" height="8" />
+        <rect className="royal-pixel__eye" x="26" y="29" width="4" height="4" />
+        <rect className="royal-pixel__eye" x="36" y="29" width="4" height="4" />
+        <rect className="royal-pixel__blush" x="22" y="36" width="4" height="3" />
+        <rect className="royal-pixel__blush" x="40" y="36" width="4" height="3" />
+      </g>
+
+      <g className="royal-pixel__crown royal-pixel__crown--royal">
+        <rect x="18" y="10" width="28" height="8" />
+        <rect x="20" y="4" width="6" height="8" />
+        <rect x="30" y="0" width="6" height="10" />
+        <rect x="40" y="4" width="6" height="8" />
+      </g>
+
+      <g className="royal-pixel__emperor-hat">
+        <rect x="18" y="2" width="28" height="6" />
+        <rect x="12" y="8" width="40" height="8" />
+        <rect x="6" y="16" width="52" height="8" />
+        <rect x="20" y="24" width="24" height="6" />
+      </g>
+
+      <g className="royal-pixel__helmet">
+        <rect x="16" y="8" width="32" height="14" />
+        <rect x="12" y="20" width="40" height="12" />
+        <rect x="22" y="28" width="20" height="8" />
+        <rect x="30" y="8" width="4" height="28" />
+      </g>
+
+      <g className="royal-pixel__shield">
+        <rect x="48" y="48" width="12" height="24" />
+        <rect x="52" y="72" width="4" height="6" />
+        <rect x="52" y="54" width="4" height="12" />
+      </g>
+
+      <g className="royal-pixel__scepter">
+        <rect x="53" y="30" width="4" height="36" />
+        <rect x="49" y="26" width="12" height="6" />
+        <rect x="53" y="20" width="4" height="8" />
+      </g>
+
+      <text className="royal-pixel__initial" x="32" y="59" textAnchor="middle">{initial}</text>
+      <g className="royal-pixel__spark">
+        <rect x="2" y="24" width="4" height="4" />
+        <rect x="6" y="28" width="4" height="4" />
+        <rect x="2" y="32" width="4" height="4" />
+        <rect x="54" y="8" width="4" height="4" />
+        <rect x="58" y="12" width="4" height="4" />
+      </g>
     </svg>
   );
 }

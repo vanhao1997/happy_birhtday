@@ -1,5 +1,5 @@
-/* Hallmark · macrostructure: Narrative Workflow · tone: playful · anchor hue: coral · theme: Hum + 5-station childhood atlas · enrichment: tier-B SVG memory map · nav: N1 · footer: Ft5 · contrast: pass (40-41) · mobile: pass (34, 49-57) · slop: pass (42-48) */
-/* Hallmark · pre-emit critique: P5 H5 E4 S5 R4 V5 */
+/* Hallmark · macrostructure: Narrative Workflow · tone: playful pixel-art · anchor hue: teal/coral · theme: Hum + 5-station childhood atlas · enrichment: tier-B SVG tile map + royal chibi sprites · nav: N1 · footer: Ft5 · contrast: pass (40-41) · mobile: pass (34, 49-57) · slop: pass (42-48) */
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R4 V5 */
 :root {
   --color-cream-0: oklch(98% 0.023 92);
   --color-cream-1: oklch(95% 0.04 91);
@@ -67,6 +67,20 @@
   --color-map-station-ring: oklch(98% 0.02 92 / 92%);
   --color-map-overlay: oklch(22% 0.055 198 / 72%);
   --color-map-shadow: oklch(24% 0.04 195 / 30%);
+  --color-map-grid: oklch(73% 0.055 132 / 36%);
+  --color-map-pixel-sprout: oklch(58% 0.12 137 / 58%);
+  --color-map-pixel-outline: oklch(18% 0.045 195);
+  --color-map-wood: oklch(52% 0.095 58);
+  --color-map-flower: oklch(75% 0.155 34);
+  --color-map-flower-core: oklch(88% 0.15 83);
+  --color-pixel-ink: oklch(18% 0.045 195);
+  --color-pixel-deep: oklch(24% 0.055 190);
+  --color-pixel-cream: oklch(91% 0.055 88);
+  --color-pixel-teal: oklch(58% 0.105 188);
+  --color-pixel-teal-bright: oklch(73% 0.13 188);
+  --color-pixel-robe-dark: oklch(31% 0.075 197);
+  --color-pixel-robe-edge: oklch(84% 0.07 87);
+  --color-pixel-blush: oklch(78% 0.11 34);
 
   --font-display: var(--font-plus-jakarta), "Plus Jakarta Sans", sans-serif;
   --font-body: var(--font-plus-jakarta), sans-serif;

@@ -65,6 +65,34 @@ describe("childhood memory map", () => {
     expect(document.querySelector(".childhood-map__character")).toHaveClass("archetype-princess");
   });
 
+  it("supports free 2D movement with keyboard and mobile controls", () => {
+    renderMap();
+    const map = screen.getByRole("group", { name: /WASD/ });
+    const character = document.querySelector<HTMLElement>(".childhood-map__character");
+
+    expect(character?.style.getPropertyValue("--character-x")).toBe("18%");
+    fireEvent.keyDown(map, { key: "ArrowRight" });
+    expect(character?.style.getPropertyValue("--character-x")).toBe("20.25%");
+
+    expect(screen.getByRole("button", { name: "Di chuyển lên" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Di chuyển xuống" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Di chuyển trái" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Di chuyển phải" })).toBeEnabled();
+  });
+
+  it("opens a memory by pressing Enter near an enabled station", () => {
+    const { onOpenStation } = renderMap();
+    const map = screen.getByRole("group", { name: /Nhấn Enter/ });
+
+    fireEvent.keyDown(map, { key: "Enter" });
+
+    expect(onOpenStation).toHaveBeenCalledWith(
+      0,
+      DEFAULT_PIXEL_QUEST.zones[0],
+      0,
+    );
+  });
+
   it("opens the fifth station only after four server chapters", () => {
     const { rerender } = renderMap(3);
     const gate = screen.getByRole("button", { name: /Cổng tuổi mới/ });
